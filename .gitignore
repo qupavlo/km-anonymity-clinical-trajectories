@@ -1,0 +1,22 @@
+# ── Дані PhysioNet: ніколи не комітити ──────────────────────────────
+raw/
+data/
+*.csv.gz
+*.parquet
+*.npy
+
+# ── Похідні файли на рівні пацієнта (містять subject_id) ────────────
+results/unit/who_fails.csv
+results/unit/refusal_reason.csv
+results/unit/verify_pool.csv
+results/unit/diag_completeness.csv
+*.pkl
+
+# ── Логи прогонів: можуть містити поштучний вивід ───────────────────
+*.log
+
+# ── Звичайне ────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+.DS_Store

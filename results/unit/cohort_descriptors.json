@@ -1,0 +1,10 @@
+{
+ "coded_diagnoses": 6364488,
+ "patients_with_codes": 223291,
+ "admissions": 546028,
+ "median_adm_per_patient": 1.0,
+ "share_ge2_adm": 0.4485312887666767,
+ "share_ge5_adm": 0.11088669046222194,
+ "median_codes_per_patient": 13.0,
+ "distinct_codes": 28562
+}

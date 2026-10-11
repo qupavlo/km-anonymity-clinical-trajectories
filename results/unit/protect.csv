@@ -1,0 +1,5 @@
+q_known,k_target,n,median_before,share_unsafe_before,share_reached,median_codes_changed,mean_codes_changed,mean_depth,median_codes_total
+2,5,4000,1.0,0.81675,0.991,1.0,1.20125,1.6765,12.0
+2,20,4000,1.0,0.91825,0.96225,2.0,1.5565,2.37675,12.0
+3,5,4000,1.0,0.8955,0.96925,2.0,2.00675,3.122,12.0
+3,20,4000,1.0,0.94575,0.90575,3.0,2.4175,4.03675,12.0

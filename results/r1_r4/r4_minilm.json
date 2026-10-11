@@ -1,0 +1,10 @@
+{
+  "n_chunks": 189583,
+  "safe_by_struct": 0.0003745061529778514,
+  "k_struct_lt5": 0.998992525701144,
+  "isolated_top10pct": 0.1000036923141843,
+  "gap_safe_but_isolated": 2.6373672744919112e-05,
+  "gap_n": 5,
+  "rare_among_gap": 0.0,
+  "rare_among_safe": 0.0
+}
