@@ -16,6 +16,8 @@ authors:
       Department of Electronic Computing Machines, Lviv Polytechnic National
       University, Lviv, Ukraine
 license: MIT
+doi: 10.5281/zenodo.23318661
+version: v1.0.1
 repository-code: 'https://github.com/qupavlo/km-anonymity-clinical-trajectories'
 abstract: >-
   Scripts and aggregate result files reproducing every number in a study of what

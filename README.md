@@ -97,4 +97,11 @@ released under CC BY 4.0.
 
 ## Citation
 
-Citation details will be added once the paper has a DOI.
+This release is archived on Zenodo:
+
+> Zamroz, P. (2026). *Code and aggregate results for "Refusal, Not Coarsening: What Enforcing
+> k^m-Anonymity Costs on Longitudinal Patient Records"* (v1.0.1) [Software]. Zenodo.
+> https://doi.org/10.5281/zenodo.23318662
+
+The concept identifier `10.5281/zenodo.23318661` always resolves to the latest version.
+Citation details for the accompanying paper will be added once it has a DOI.
