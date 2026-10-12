@@ -1,9 +1,9 @@
-"""Рисунок 1: крива ризику. IEEE одна колонка, вектор, придатний для чорно-білого друку.
+"""Figure 1: the risk curve. Single column, vector, legible in black and white.
 
-(a) медіана множини кандидатів як функція обсягу знання супротивника (лог-шкала)
-(b) частка ідентифікованих при додаванні одного атрибута до двох відомих діагнозів
+(a) median candidate-set size as a function of adversary knowledge (log scale)
+(b) share identified when one attribute is added to two known diagnoses
 
-Кольору як носія інформації немає: ідентичність несуть позиція, маркери й прямі підписи.
+Colour never carries information: identity is carried by position, marker shape and direct labels.
 """
 from pathlib import Path
 
@@ -32,9 +32,9 @@ attr = pd.read_csv(RES / "attributes_symmetric.csv")
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(3.5, 4.0),
                                gridspec_kw={"height_ratios": [1.0, 1.15], "hspace": 0.62})
 
-# ---- (a) крива ризику -------------------------------------------------------
-# Значення читаються з CSV, а не задані в коді: інакше перерахунок експерименту
-# мовчки розійдеться з рисунком.
+# ---- (a) the risk curve -----------------------------------------------------
+# Values are read from the CSV rather than hard-coded: otherwise re-running the
+# experiment would silently leave the figure disagreeing with the paper.
 base = float(link.loc[link.policy == "-", "median"].iloc[0])
 
 
@@ -55,10 +55,10 @@ ax1.plot(xs, yr, "--s", color=MUTED, lw=1.4, ms=4.0, mfc=MUTED, mew=0, zorder=3,
 for x, y in zip(xs, yc):
     ax1.annotate(f"{y:,.0f}".replace(",", " "), (x, y), textcoords="offset points",
                  xytext=(0, 9), ha="center", fontsize=7, color=INK)
-# підписуємо лише q=1: при q=2,3 значення дорівнює 1 і читається з осі,
-# а підпис там неминуче налазить на підписи поділок
+# label q=1 only: at q=2,3 the value is 1 and can be read off the axis, while a
+# label there unavoidably collides with the tick labels
 for x, y in list(zip(xs, yr))[1:2]:
-    # підпис над маркером: знизу він налазив би на підписи осі
+    # label above the marker: below it would collide with the axis labels
     ax1.annotate(f"{y:,.0f}".replace(",", " "), (x, y), textcoords="offset points",
                  xytext=(9, 1), ha="left", va="center", fontsize=7, color=MUTED)
 ax1.legend(fontsize=6.5, frameon=False, loc="upper right", handlelength=1.6,
@@ -72,11 +72,11 @@ ax1.grid(axis="y", color=GRID, lw=0.4, alpha=0.7)
 ax1.set_axisbelow(True)
 ax1.set_title("(a) risk as a function of adversary knowledge", loc="left", pad=11)
 
-# ---- (b) внесок окремих атрибутів ------------------------------------------
+# ---- (b) contribution of individual attributes ------------------------------
 d = attr.copy()
 d["name"] = d.extra.str.replace("— (diagnoses only)", "two diagnoses only", regex=False)
 d = d.sort_values("unique")
-hi = d.unique >= 0.15                       # атрибути, що ламають захист
+hi = d.unique >= 0.15                       # attributes that break the protection
 base = float(d[d.name == "two diagnoses only"].unique.iloc[0] * 100)
 ax2.axvline(base, color=MUTED, lw=0.7, ls=(0, (3, 2)), zorder=2)
 bars = ax2.barh(d.name, d.unique * 100, height=0.62,
@@ -98,4 +98,4 @@ ax2.set_title("(b) one further attribute, added to two known diagnoses",
 
 fig.savefig(OUT / "risk_curve.pdf", bbox_inches="tight", pad_inches=0.02)
 fig.savefig(OUT / "risk_curve.png", dpi=300, bbox_inches="tight", pad_inches=0.02)
-print("збережено risk_curve.pdf і .png")
+print("wrote risk_curve.pdf and .png")
