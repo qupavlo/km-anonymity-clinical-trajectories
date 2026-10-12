@@ -1,0 +1,37 @@
+cff-version: 1.2.0
+title: >-
+  Code and aggregate results for "Refusal, Not Coarsening: What Enforcing
+  k^m-Anonymity Costs on Longitudinal Patient Records, and Why Its Guarantee
+  Resists Verification"
+message: >-
+  If you use this software or the aggregate results it contains, please cite
+  both the software and the accompanying paper.
+type: software
+authors:
+  - given-names: Pavlo
+    family-names: Zamroz
+    email: pavlo.i.zamroz@lpnu.ua
+    orcid: 'https://orcid.org/0009-0008-8722-5769'
+    affiliation: >-
+      Department of Electronic Computing Machines, Lviv Polytechnic National
+      University, Lviv, Ukraine
+license: MIT
+repository-code: 'https://github.com/qupavlo/km-anonymity-clinical-trajectories'
+abstract: >-
+  Scripts and aggregate result files reproducing every number in a study of what
+  enforcing k^m-anonymity costs on longitudinal patient records. The study
+  measures the candidate-set distribution as a function of adversary knowledge,
+  shows that a capped subset search is not a sound audit of the guarantee it
+  certifies, and separates the downstream cost of generalization from the cost
+  of refusing records that cannot be protected. Contains no patient data: the
+  underlying MIMIC-IV database is distributed under a data use agreement that
+  prohibits redistribution, and derived files carrying one row per patient are
+  withheld.
+keywords:
+  - de-identification
+  - re-identification risk
+  - statistical disclosure control
+  - k-anonymity
+  - electronic health records
+  - generalization
+  - machine learning

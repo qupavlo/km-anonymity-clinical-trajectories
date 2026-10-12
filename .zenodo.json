@@ -1,0 +1,23 @@
+{
+  "title": "Code and aggregate results for \"Refusal, Not Coarsening: What Enforcing k^m-Anonymity Costs on Longitudinal Patient Records\"",
+  "upload_type": "software",
+  "license": "MIT",
+  "access_right": "open",
+  "creators": [
+    {
+      "name": "Zamroz, Pavlo",
+      "affiliation": "Lviv Polytechnic National University, Lviv, Ukraine",
+      "orcid": "0009-0008-8722-5769"
+    }
+  ],
+  "keywords": [
+    "de-identification",
+    "re-identification risk",
+    "statistical disclosure control",
+    "k-anonymity",
+    "electronic health records",
+    "generalization",
+    "machine learning"
+  ],
+  "notes": "Contains no patient data. MIMIC-IV is distributed by PhysioNet under a credentialed data use agreement that prohibits redistribution; derived files carrying one row per patient are withheld and blocked in .gitignore. All files under results/ are aggregate."
+}
