@@ -1,15 +1,15 @@
-"""Коректна kᵐ-анонімність: гарантія для БУДЬ-ЯКОЇ підмножини розміру <= m.
+"""Correct k^m-anonymity: the guarantee must hold for ANY subset of size <= m.
 
-Попередня реалізація забезпечувала умову лише для однієї наперед заданої множини відомих кодів,
-і адаптивний супротивник її ламав (21 % безпечних замість 99 %). Правильне означення
-(Terrovitis et al.): для кожної множини з m або менше елементів має існувати щонайменше k
-пацієнтів, що її містять.
+The previous implementation enforced the condition only for a single, pre-specified set of known
+codes, and an adaptive adversary broke it (21% safe instead of 99%). The proper definition
+(Terrovitis et al.): for every set of m or fewer items there must exist at least k patients whose
+records contain it.
 
-Жадібний алгоритм з перевіркою всіх сполучень. Застосовуємо монотонність Apriori: якщо множина
-розміру j уже порушує умову, порушують і всі її надмножини, тому шукаємо ПОРУШЕННЯ знизу вгору
-і зупиняємося на першому знайденому.
+A greedy algorithm that checks all combinations. It exploits Apriori monotonicity: if a set of
+size j already violates the condition, so do all of its supersets, hence VIOLATIONS are searched
+for bottom-up and the search stops at the first one found.
 
-Вихід: results/unit/kmanon.csv
+Output: results/unit/kmanon.csv
 """
 from collections import defaultdict
 from itertools import combinations
@@ -47,16 +47,16 @@ def main():
     u = u[u.gender.notna() & u.band.notna()]
     pop = dx.groupby("code").subject_id.nunique().to_dict()
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     idx = {l: defaultdict(set) for l in range(MAXLVL + 1)}
     for sid, cs, g, b in zip(u.index, u.codes, u.gender, u.band):
         for c in cs:
             for l in range(MAXLVL + 1):
                 idx[l][(g, b, gen_code(c, l))].add(sid)
-    print("готово", flush=True)
+    print("done", flush=True)
 
     def support(g, b, items):
-        """items: список (код, рівень)."""
+        """items: a list of (code, level) pairs."""
         sets = [idx[l][(g, b, gen_code(c, l))] for c, l in items]
         if not sets:
             return len(u)
@@ -64,13 +64,13 @@ def main():
         out = sets[0]
         for s in sets[1:]:
             out = out & s
-            if len(out) < K_TARGET:        # раннє відсікання
+            if len(out) < K_TARGET:        # early exit
                 return len(out)
         return len(out)
 
     def support_exact(g, b, items):
-        """Без раннього відсікання: точний розмір потрібен, коли значення використовується
-        як приріст у жадібному кроці, а не лише для булевого порівняння з K."""
+        """No early exit: the exact size is required when the value is used as the gain in the
+        greedy step and not merely for a boolean comparison against K."""
         sets = [idx[l][(g, b, gen_code(c, l))] for c, l in items]
         if not sets:
             return len(u)
@@ -81,15 +81,16 @@ def main():
         return len(out)
 
     def worst_violation(g, b, cs, lvl, m):
-        """Знайти підмножину розміру <= m з найменшою підтримкою. Apriori: шукаємо знизу вгору,
-        і до рівня j+1 беремо лише коди, що входили в "тонкі" множини рівня j."""
-        # рівень 1
+        """Find the subset of size <= m with the smallest support. Apriori: search bottom-up and
+        carry into level j+1 only the codes that occurred in the "thin" sets of level j."""
+        # level 1
         sup1 = {c: support(g, b, [(c, lvl[c])]) for c in cs}
         worst = min(sup1.values()) if sup1 else len(u)
         worst_set = [min(sup1, key=sup1.get)] if sup1 else []
         if worst < K_TARGET and m == 1:
             return worst, worst_set
-        # кандидати: коди з найменшою підтримкою (решта не дадуть порушення швидше)
+        # candidate pool: the codes with the smallest support (the rest cannot yield a violation
+        # any sooner)
         pool = sorted(cs, key=lambda c: sup1[c])[:14]
         for j in range(2, m + 1):
             best_j, best_set = len(u), None
@@ -123,7 +124,7 @@ def main():
                 w, wset = worst_violation(g, b, cs, lvl, m)
                 if w >= K_TARGET:
                     break
-                # піднімаємо той код з порушеної множини, що дає найбільший приріст
+                # raise the code of the violating set that gives the largest gain
                 best, gain = None, -1
                 for c in wset:
                     if lvl[c] >= MAXLVL:
@@ -149,8 +150,8 @@ def main():
                          mean_codes_changed=float(np.mean(n_changed)),
                          share_codes_changed=float(np.mean(np.array(n_changed) / np.array(ncodes)))))
         r = rows[-1]
-        print(f"m={m}: небезпечних до {r['unsafe_before']:.1%}, досягнуто {r['reached']:.1%}, "
-              f"змінено {r['mean_codes_changed']:.1f} з {r['median_codes']:.0f} кодів "
+        print(f"m={m}: unsafe before {r['unsafe_before']:.1%}, reached {r['reached']:.1%}, "
+              f"changed {r['mean_codes_changed']:.1f} of {r['median_codes']:.0f} codes "
               f"({r['share_codes_changed']:.1%})", flush=True)
 
     out = pd.DataFrame(rows)

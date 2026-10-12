@@ -1,22 +1,23 @@
-"""Симетричний переобрахунок таблиці ризику: розділити РІДКІСНІСТЬ і КІЛЬКІСТЬ (C2-4).
+"""Symmetric recomputation of the risk table: separate RARITY from COUNT.
 
-Претензія рецензії. У `linkage_fixed.py` сценарії S1-S3 беруть НАЙЧАСТІШІ коди пацієнта
-(`common_q`), а S6 — НАЙРІДКІСНІШИЙ. Це найкращий випадок для захисника проти найгіршого для
-супротивника, тож контраст «1 рідкісний б'є 3 звичайні» може бути артефактом вибору, а не
-властивістю даних. До того ж S6 рахувався лише на пацієнтах, що мають рідкісний код
-(n=34 216), а підпис таблиці заявляв n=223 291 — отже частки непорівнянні.
+Raised in review. In `linkage_fixed.py` scenarios S1-S3 take the patient's MOST COMMON codes
+(`common_q`), while S6 takes the RAREST one. That pits a best case for the defender against a
+worst case for the adversary, so the contrast "1 rare code beats 3 common ones" may be an
+artefact of the selection rather than a property of the data. On top of that, S6 was computed
+only over patients who have a rare code (n=34,216), while the table caption claimed n=223,291 —
+so the shares were not comparable.
 
-Тут робимо повний факторний дизайн: політика вибору (common | rare) × q (1,2,3).
-Тоді:
-  rare_q проти common_q за ОДНАКОВОГО q      -> чистий ефект РІДКІСНОСТІ
-  q=1 проти q=2 проти q=3 за ОДНАКОВОЇ політики -> чистий ефект КІЛЬКОСТІ
-Жодного порівняння «найкраще проти найгіршого».
+Here we use a full factorial design: selection policy (common | rare) × q (1,2,3).
+Then:
+  rare_q vs common_q at the SAME q            -> the pure effect of RARITY
+  q=1 vs q=2 vs q=3 under the SAME policy     -> the pure effect of COUNT
+No "best case against worst case" comparison anywhere.
 
-Додатково кожен рядок рахується на ДВОХ знаменниках:
-  n_cond  пацієнти, для яких сценарій визначений (як було)
-  share_cohort  та сама частка, віднесена до ПОВНОЇ когорти -> порівнянна між рядками
+In addition, every row is computed against TWO denominators:
+  n_cond  patients for whom the scenario is defined (as before)
+  share_cohort  the same share referred to the FULL cohort -> comparable across rows
 
-Вихід: results/unit/linkage_symmetric.csv
+Output: results/unit/linkage_symmetric.csv
 """
 from collections import defaultdict
 from pathlib import Path
@@ -44,7 +45,7 @@ def main():
     u["n_adm"] = adm.groupby("subject_id").hadm_id.nunique().reindex(u.index)
     pop = dx.groupby("code").subject_id.nunique().to_dict()
     N = len(u)
-    print(f"пацієнтів {N}", flush=True)
+    print(f"patients {N}", flush=True)
 
     demo = defaultdict(set)
     for sid, g, b in zip(u.index, u.gender, u.band):
@@ -56,7 +57,7 @@ def main():
     nadm_idx = defaultdict(set)
     for sid, k in zip(u.index, u.n_adm):
         nadm_idx[k].add(sid)
-    print("індекси готові", flush=True)
+    print("indexes ready", flush=True)
 
     def inter(sets):
         sets = sorted(sets, key=len)
@@ -68,7 +69,11 @@ def main():
         return len(out)
 
     def pick(cs, q, policy):
-        """q кодів пацієнта: найчастіші або найрідкісніші. None, якщо кодів менше q."""
+        """q codes of the patient: the most common or the rarest ones.
+
+        None when the patient has fewer than q codes: previously such a patient was handed their
+        whole code set under the label "the q most common", which is not the same scenario.
+        """
         if len(cs) < q:
             return None
         key = (lambda c: -pop.get(c, 0)) if policy == "common" else (lambda c: pop.get(c, 0))
@@ -76,16 +81,16 @@ def main():
 
     rows = []
 
-    # базова лінія без діагнозів
+    # baseline without diagnoses
     sizes = np.array([len(demo[(r.gender, r.band)]) for r in u.itertuples()])
     rows.append(dict(policy="-", q=0, n_cond=len(sizes), median=float(np.median(sizes)),
                      unique=float(np.mean(sizes == 1)),
                      share_cohort=float(np.mean(sizes == 1)),
                      lt5=float(np.mean(sizes < 5))))
-    print(f"{'sex+age':22s} n={len(sizes):6d} медіана {np.median(sizes):7.0f} "
-          f"ідент. {np.mean(sizes == 1):6.2%}", flush=True)
+    print(f"{'sex+age':22s} n={len(sizes):6d} median {np.median(sizes):7.0f} "
+          f"ident. {np.mean(sizes == 1):6.2%}", flush=True)
 
-    # повний факторний: політика × q
+    # full factorial: policy × q
     for policy in ("common", "rare"):
         for q in (1, 2, 3):
             sizes, n_undef = [], 0
@@ -99,12 +104,12 @@ def main():
             uniq = float(np.mean(a == 1))
             rows.append(dict(policy=policy, q=q, n_cond=len(a), median=float(np.median(a)),
                              unique=uniq,
-                             share_cohort=uniq * len(a) / N,   # віднесено до повної когорти
+                             share_cohort=uniq * len(a) / N,   # referred to the full cohort
                              lt5=float(np.mean(a < 5))))
-            print(f"{policy+' x'+str(q):22s} n={len(a):6d} медіана {np.median(a):7.0f} "
-                  f"ідент. {uniq:6.2%}  (від когорти {uniq*len(a)/N:6.2%})", flush=True)
+            print(f"{policy+' x'+str(q):22s} n={len(a):6d} median {np.median(a):7.0f} "
+                  f"ident. {uniq:6.2%}  (of cohort {uniq*len(a)/N:6.2%})", flush=True)
 
-    # + кількість госпіталізацій, поверх q кодів (той самий фільтр, що й вище)
+    # + number of admissions, on top of the q codes (same filter as above)
     for policy in ("common", "rare"):
         for q in (3,):
             sizes = []
@@ -119,10 +124,10 @@ def main():
             rows.append(dict(policy=policy + "+nadm", q=q, n_cond=len(a),
                              median=float(np.median(a)), unique=uniq,
                              share_cohort=uniq * len(a) / N, lt5=float(np.mean(a < 5))))
-            print(f"{policy+'x'+str(q)+' +n_adm':22s} n={len(a):6d} медіана {np.median(a):7.0f} "
-                  f"ідент. {uniq:6.2%}", flush=True)
+            print(f"{policy+'x'+str(q)+' +n_adm':22s} n={len(a):6d} median {np.median(a):7.0f} "
+                  f"ident. {uniq:6.2%}", flush=True)
 
-    # окремо: рівно один БЕЗУМОВНО рідкісний код (pop <= RARE_PAT) — як було в S6
+    # separately: exactly one code rare in ABSOLUTE terms (pop <= RARE_PAT), as S6 had it
     rare = {c for c, n in pop.items() if n <= RARE_PAT}
     sizes = []
     for r in u.itertuples():
@@ -136,27 +141,27 @@ def main():
     rows.append(dict(policy="rare_abs", q=1, n_cond=len(a), median=float(np.median(a)),
                      unique=uniq, share_cohort=uniq * len(a) / N,
                      lt5=float(np.mean(a < 5))))
-    print(f"{'one code pop<=10':22s} n={len(a):6d} медіана {np.median(a):7.0f} "
-          f"ідент. {uniq:6.2%}  (від когорти {uniq*len(a)/N:6.2%})", flush=True)
-    print(f"   частка когорти, що взагалі має такий код: {len(a)/N:.1%}", flush=True)
+    print(f"{'one code pop<=10':22s} n={len(a):6d} median {np.median(a):7.0f} "
+          f"ident. {uniq:6.2%}  (of cohort {uniq*len(a)/N:6.2%})", flush=True)
+    print(f"   share of cohort carrying such a code at all: {len(a)/N:.1%}", flush=True)
 
     out = pd.DataFrame(rows)
     out.to_csv(RES / "linkage_symmetric.csv", index=False)
     print()
     print(out.round(4).to_string(index=False))
 
-    # прямі відповіді на питання статті
+    # direct answers to the questions posed in the paper
     g = {(r.policy, r.q): r for r in out.itertuples()}
-    print("\n--- ЕФЕКТ РІДКІСНОСТІ (той самий q, інша політика) ---")
+    print("\n--- RARITY EFFECT (same q, different policy) ---")
     for q in (1, 2, 3):
         c, r_ = g[("common", q)], g[("rare", q)]
         print(f"  q={q}: common {c.unique:6.2%} -> rare {r_.unique:6.2%} "
               f"(×{r_.unique/max(c.unique,1e-9):.1f})")
-    print("--- ЕФЕКТ КІЛЬКОСТІ (та сама політика, інше q) ---")
+    print("--- CARDINALITY EFFECT (same policy, different q) ---")
     for policy in ("common", "rare"):
         v = [g[(policy, q)].unique for q in (1, 2, 3)]
         print(f"  {policy}: {v[0]:6.2%} -> {v[1]:6.2%} -> {v[2]:6.2%} "
-              f"(×{v[2]/max(v[0],1e-9):.1f} від q=1 до q=3)")
+              f"(×{v[2]/max(v[0],1e-9):.1f} from q=1 to q=3)")
 
 
 if __name__ == "__main__":

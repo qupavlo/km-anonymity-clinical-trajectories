@@ -1,15 +1,15 @@
-"""Базові лінії для цільового узагальнення юніта.
+"""Baselines for targeted generalization of a unit.
 
-Перевіряємо, чи дає жадібний вибір виграш проти простіших стратегій за ОДНАКОВОЇ ціни.
-Ціна = кількість піднятих рівнів (сумарна глибина), тож порівняння чесне.
+We check whether the greedy choice gains anything over simpler strategies AT EQUAL COST.
+Cost = the number of levels raised (total depth), so the comparison is fair.
 
-  greedy      наш метод: піднімаємо код з найбільшим приростом множини кандидатів
-  random      піднімаємо випадкові коди з відомих супротивнику, та сама глибина
-  rarest      піднімаємо найрідкісніший код (проста евристика без перебору)
-  all_rare    узагальнюємо ВСІ рідкісні коди юніта на 1 рівень (класичний підхід)
-  suppress    вилучаємо з відомих супротивнику коди замість узагальнення
+  greedy      our method: raise the code that gains the most candidates
+  random      raise random codes among those known to the adversary, same depth
+  rarest      raise the rarest code (a simple heuristic, no search)
+  all_rare    generalize ALL rare codes of the unit by 1 level (the classical approach)
+  suppress    remove codes from those known to the adversary instead of generalizing
 
-Вихід: results/unit/baselines.csv
+Output: results/unit/baselines.csv
 """
 import json
 from collections import defaultdict
@@ -52,7 +52,7 @@ def main():
     pop = dx.groupby("code").subject_id.nunique()
     rare = set(pop[pop <= RARE_PAT].index)
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     idx = {}
     for lvl in range(MAXLVL + 1):
         m = defaultdict(set)
@@ -62,7 +62,7 @@ def main():
         idx[lvl] = m
 
     def cand(g, b, chosen):
-        """chosen: список (код, рівень); рівень None = код придушено (супротивник його не бачить)."""
+        """chosen: list of (code, level); level None = the code is suppressed (the adversary does not see it)."""
         sets = [idx[l].get((g, b, generalize(c, l)), set()) for c, l in chosen if l is not None]
         return len(set.intersection(*sets)) if sets else len(u)
 
@@ -86,7 +86,7 @@ def main():
         return lvl
 
     def apply_budget(g, b, known, budget, order):
-        """Підняти коди в заданому порядку, доки не витрачено budget рівнів."""
+        """Raise codes in the given order until `budget` levels have been spent."""
         lvl = {c: 0 for c in known}
         spent = 0
         i = 0
@@ -112,22 +112,22 @@ def main():
                 res["greedy"].append(cand(g, b, [(c, lvl_g[c]) for c in known]) >= K)
                 res["greedy_cost"].append(budget)
 
-                # random: та сама глибина, випадковий порядок
+                # random: same depth, random order
                 order = list(rng.permutation(known))
                 lvl_r = apply_budget(g, b, known, budget, order)
                 res["random"].append(cand(g, b, [(c, lvl_r[c]) for c in known]) >= K)
 
-                # rarest-first: та сама глибина, починаємо з найрідкіснішого
+                # rarest-first: same depth, starting from the rarest code
                 order = sorted(known, key=lambda c: pop.get(c, 0))
                 lvl_x = apply_budget(g, b, known, budget, order)
                 res["rarest"].append(cand(g, b, [(c, lvl_x[c]) for c in known]) >= K)
 
-                # all_rare: усі рідкісні коди юніта на 1 рівень (ціна рахується окремо)
+                # all_rare: every rare code of the unit by 1 level (its cost is counted separately)
                 lvl_a = {c: (1 if c in rare else 0) for c in known}
                 res["all_rare"].append(cand(g, b, [(c, lvl_a[c]) for c in known]) >= K)
                 res["all_rare_cost"].append(sum(1 for c in cs if c in rare))
 
-                # suppress: придушуємо стільки відомих кодів, скільки рівнів витратив greedy
+                # suppress: suppress as many known codes as the levels greedy spent
                 n_sup = min(len(known), max(1, budget // MAXLVL))
                 sup = sorted(known, key=lambda c: pop.get(c, 0))[:n_sup]
                 chosen = [(c, None if c in sup else 0) for c in known]
@@ -146,7 +146,7 @@ def main():
             rows.append(row)
             print(f"q={q} K={K}: greedy {row['greedy']:.3f}  random {row['random']:.3f}  "
                   f"rarest {row['rarest']:.3f}  all_rare {row['all_rare']:.3f} "
-                  f"(ціна {row['all_rare_cost']:.1f} проти {row['greedy_cost']:.2f})  "
+                  f"(cost {row['all_rare_cost']:.1f} vs {row['greedy_cost']:.2f})  "
                   f"suppress {row['suppress']:.3f}", flush=True)
 
     out = pd.DataFrame(rows)

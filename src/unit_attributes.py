@@ -1,15 +1,16 @@
-"""РЕАЛІСТИЧНИЙ сценарій: супротивник знає q НАЙЧАСТІШИХ діагнозів пацієнта.
+"""REALISTIC scenario: the adversary knows the patient's q MOST COMMON diagnoses.
 
-Наскільки додаткові атрибути датасету звужують множину кандидатів.
+How far the dataset's additional attributes narrow the candidate set.
 
-Наші попередні числа пораховано ЛИШЕ за діагнозами, тож вони є нижньою межею ризику.
-Реальний датасет для навчання містить більше: процедури, тип і час госпіталізації,
-страховку, мову, сімейний стан. Кожен атрибут звужує коло.
+Our earlier numbers were computed from diagnoses ONLY, so they are a lower bound on risk.
+A real training dataset holds more: procedures, admission type and time, insurance, language,
+marital status. Every attribute narrows the circle.
 
-Міряємо приріст ризику: від базового сценарію (стать, вік, q діагнозів) додаємо по одному
-атрибуту і дивимося, як змінюється медіана множини кандидатів і частка ідентифікованих.
+We measure the increment in risk: starting from the base scenario (sex, age, q diagnoses) we add
+one attribute at a time and watch how the median candidate set and the share of identified
+patients change.
 
-Вихід: results/unit/attributes.csv
+Output: results/unit/attributes.csv
 """
 from collections import defaultdict
 from pathlib import Path
@@ -41,7 +42,7 @@ def main():
     u = pd.DataFrame({"codes": unit}).join(pts.set_index("subject_id")[["gender", "band"]], how="inner")
     u = u[u.gender.notna() & u.band.notna()]
 
-    # атрибути на рівні пацієнта: беремо з ПЕРШОЇ госпіталізації (що знав би супротивник)
+    # patient-level attributes: taken from the FIRST admission (what the adversary would know)
     adm = adm.sort_values(["subject_id", "admittime"])
     first = adm.groupby("subject_id").first()
     u = u.join(first[["admission_type", "insurance", "language", "marital_status", "race"]])
@@ -49,24 +50,24 @@ def main():
     u["n_adm"] = adm.groupby("subject_id").hadm_id.nunique().reindex(u.index)
     u["procs"] = pr.groupby("subject_id").pcode.apply(set).reindex(u.index)
     u["n_proc"] = u.procs.map(lambda s: len(s) if isinstance(s, set) else 0)
-    print(f"пацієнтів {len(u)}; з процедурами {(u.n_proc > 0).mean():.1%}", flush=True)
+    print(f"patients {len(u)}; with procedures {(u.n_proc > 0).mean():.1%}", flush=True)
 
     def top_rare(cs, q):
         return tuple(sorted(sorted(cs, key=lambda c: -pop.get(c, 0))[:q]))
 
     extras = {
-        "— (лише діагнози)": lambda r: (),
-        "+ рік першої госпіталізації": lambda r: (r.year,),
-        "+ тип госпіталізації": lambda r: (r.admission_type,),
-        "+ кількість госпіталізацій": lambda r: (r.n_adm,),
-        "+ страховка": lambda r: (r.insurance,),
-        "+ сімейний стан": lambda r: (r.marital_status,),
-        "+ раса": lambda r: (r.race,),
-        "+ 1 процедура": lambda r: (min(r.procs, key=lambda c: pr_pop.get(c, 0))
+        "— (diagnoses only)": lambda r: (),
+        "+ year of first admission": lambda r: (r.year,),
+        "+ admission type": lambda r: (r.admission_type,),
+        "+ number of admissions": lambda r: (r.n_adm,),
+        "+ payer": lambda r: (r.insurance,),
+        "+ marital status": lambda r: (r.marital_status,),
+        "+ ethnicity": lambda r: (r.race,),
+        "+ one procedure code": lambda r: (min(r.procs, key=lambda c: pr_pop.get(c, 0))
                                     if isinstance(r.procs, set) and r.procs else None,),
-        "+ рік і тип": lambda r: (r.year, r.admission_type),
-        "+ усі демографічні": lambda r: (r.insurance, r.marital_status, r.race, r.language),
-        "+ усе разом": lambda r: (r.year, r.admission_type, r.n_adm, r.insurance,
+        "+ year and admission type": lambda r: (r.year, r.admission_type),
+        "+ all demographic attributes": lambda r: (r.insurance, r.marital_status, r.race, r.language),
+        "+ all of the above": lambda r: (r.year, r.admission_type, r.n_adm, r.insurance,
                                   r.marital_status, r.race),
     }
     pr_pop = pr.groupby("pcode").subject_id.nunique().to_dict()
@@ -84,8 +85,8 @@ def main():
             rows.append(dict(q_known=q, extra=name, median=float(np.median(size)),
                              unique=float(np.mean(size == 1)), lt5=float(np.mean(size < 5)),
                              ge20=float(np.mean(size >= 20))))
-            print(f"q={q} {name:30s} медіана {np.median(size):7.0f}  "
-                  f"ідентифіковано {np.mean(size == 1):6.1%}  <5 {np.mean(size < 5):6.1%}", flush=True)
+            print(f"q={q} {name:30s} median {np.median(size):7.0f}  "
+                  f"identified {np.mean(size == 1):6.1%}  <5 {np.mean(size < 5):6.1%}", flush=True)
 
     out = pd.DataFrame(rows)
     out.to_csv(RES / "attributes.csv", index=False)

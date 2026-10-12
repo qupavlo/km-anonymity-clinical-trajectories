@@ -1,16 +1,23 @@
-"""Чи можна зробити юніт пацієнта безпечним, узагальнивши кілька кодів?
+"""Can a patient's unit be made safe by generalizing a few codes?
 
-Юніт випускається цілісним (уся траєкторія потрібна для навчання). Узагальнення = підняття коду
-ICD до категорії: ICD-10 'E1165' -> 'E11' -> 'E'; ICD-9 '25000' -> '250' -> '25'.
+SUPERSEDED, KNOWN-INCORRECT. Kept only because the paper reports what it got wrong; do NOT use
+it as a reference implementation. It fixes ONE assumed knowledge set per patient (the q codes
+rarest in the population) and enforces the guarantee for that single set only. k^m-anonymity
+requires the guarantee to hold for EVERY subset of at most m codes, so a different q-subset can
+still leave the candidate set below K after this script has reported success; an adaptive
+adversary breaks it. The correct, all-subsets version is `kmanon.py`.
 
-Загроза: супротивник знає стать, вікову групу і q діагнозів пацієнта. Беремо найгірший для
-пацієнта випадок — ту комбінацію q кодів, що звужує множину кандидатів найсильніше
-(найрідкісніші в популяції коди).
+A unit is released intact (the whole trajectory is needed for training). Generalization = lifting
+an ICD code to its category: ICD-10 'E1165' -> 'E11' -> 'E'; ICD-9 '25000' -> '250' -> '25'.
 
-Жадібний алгоритм: доки множина кандидатів < K, узагальнюємо той код, який дає найбільший приріст
-множини. Міряємо ціну: скільки кодів змінено і на скільки рівнів.
+Threat: the adversary knows sex, age band and q of the patient's diagnoses. We take the case worst
+for the patient, i.e. the combination of q codes that narrows the candidate set the most (the codes
+rarest in the population).
 
-Вихід: results/unit/protect.csv
+Greedy algorithm: while the candidate set is < K, generalize the code that yields the largest
+increase of that set. Cost is measured as how many codes were changed and by how many levels.
+
+Output: results/unit/protect.csv
 """
 import json
 from collections import defaultdict
@@ -23,13 +30,13 @@ ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "results" / "unit"
 RES.mkdir(parents=True, exist_ok=True)
 K_TARGET = (5, 20)
-Q_KNOWN = (2, 3)        # скільки діагнозів знає супротивник
-N_SAMPLE = 4000         # пацієнтів у прогоні (жадібний пошук дорогий)
+Q_KNOWN = (2, 3)        # how many diagnoses the adversary knows
+N_SAMPLE = 4000         # patients per run (the greedy search is expensive)
 SEED = 20261005
 
 
 def generalize(code, level):
-    """level 0 — без змін; 1 — категорія; 2 — блок."""
+    """Level 0 — unchanged; 1 — category; 2 — block."""
     ver, c = code.split(":", 1)
     if level <= 0:
         return code
@@ -52,8 +59,8 @@ def main():
     u = u[u.gender.notna() & u.band.notna()]
     pop = dx.groupby("code").subject_id.nunique()
 
-    # індекс популяції: для кожного рівня узагальнення — множина пацієнтів на код
-    print("будую індекс популяції...", flush=True)
+    # population index: for each generalization level, the set of patients per code
+    print("building population index...", flush=True)
     idx = {}
     for lvl in (0, 1, 2):
         m = defaultdict(set)
@@ -62,10 +69,10 @@ def main():
             for c in cs:
                 m[(g, b, generalize(c, lvl))].add(sid)
         idx[lvl] = m
-        print(f"  рівень {lvl}: {len(m)} ключів", flush=True)
+        print(f"  level {lvl}: {len(m)} keys", flush=True)
 
     def candidates(gender, band, chosen):
-        """Скільки пацієнтів мають УСІ задані (код, рівень) при тих самих статі й віку."""
+        """How many patients carry ALL the given (code, level) pairs at the same sex and age band."""
         sets = [idx[lvl].get((gender, band, generalize(c, lvl)), set()) for c, lvl in chosen]
         if not sets:
             return len(u)
@@ -80,12 +87,12 @@ def main():
             for sid in sample:
                 cs = list(u.at[sid, "codes"])
                 g, b = u.at[sid, "gender"], u.at[sid, "band"]
-                # найгірша для пацієнта комбінація: q найрідкісніших у популяції кодів
+                # combination worst for the patient: the q codes rarest in the population
                 known = sorted(cs, key=lambda c: pop.get(c, 0))[:q]
                 lvl = {c: 0 for c in known}
                 k0 = candidates(g, b, [(c, 0) for c in known])
                 before.append(k0)
-                for _ in range(2 * q):                      # не більше ніж 2 рівні на код
+                for _ in range(2 * q):                      # at most 2 levels per code
                     cur = candidates(g, b, [(c, lvl[c]) for c in known])
                     if cur >= K:
                         break
@@ -116,9 +123,9 @@ def main():
                 median_codes_total=float(np.median([len(u.at[s, "codes"]) for s in sample])),
             ))
             r = rows[-1]
-            print(f"знає {q} діагнози, ціль k>={K}: до захисту небезпечних {r['share_unsafe_before']:.1%}, "
-                  f"досягнуто {r['share_reached']:.1%}, змінено кодів у середньому {r['mean_codes_changed']:.2f} "
-                  f"з {r['median_codes_total']:.0f}", flush=True)
+            print(f"knows {q} diagnoses, target k>={K}: unsafe before protection {r['share_unsafe_before']:.1%}, "
+                  f"reached {r['share_reached']:.1%}, codes changed on average {r['mean_codes_changed']:.2f} "
+                  f"of {r['median_codes_total']:.0f}", flush=True)
 
     out = pd.DataFrame(rows)
     out.to_csv(RES / "protect.csv", index=False)

@@ -1,14 +1,14 @@
-"""Хто лишається незахищеним після вичерпання ієрархії?
+"""Who is left unprotected once the hierarchy is exhausted?
 
-За m = 3 правильна kᵐ-анонімність покриває лише 73 % пацієнтів. Якщо решта — це систематично
-вразливіші групи (рідкісні хвороби, літні, меншини), то відмова у випуску б'є саме по тих,
-кого захист мав би берегти найбільше. Це перегукується з Knolle et al. 2026 (Nature), де в хвості
-ризику надпредставлені недопредставлені групи.
+At m = 3, correct k^m-anonymity covers only 73 % of patients. If the rest are systematically more
+vulnerable groups (rare diseases, the elderly, minorities), then refusing to release hits exactly
+the people the protection was meant to shield most. This echoes Knolle et al. 2026 (Nature), where
+under-represented groups are over-represented in the risk tail.
 
-Порівнюємо профілі захищених і незахищених: стать, вік, раса, страховка, кількість діагнозів,
-кількість госпіталізацій, рідкісність найрідкіснішого коду.
+We compare the profiles of the protected and the unprotected: sex, age, race, insurance, number of
+diagnoses, number of admissions, rarity of the rarest code.
 
-Вихід: results/unit/who_fails.csv
+Output: results/unit/who_fails.csv
 """
 import sys
 from collections import defaultdict
@@ -49,7 +49,7 @@ def main():
     u["n_adm"] = adm.groupby("subject_id").hadm_id.nunique().reindex(u.index)
     pop = dx.groupby("code").subject_id.nunique().to_dict()
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     idx = {l: defaultdict(set) for l in range(MAXLVL + 1)}
     for sid, cs, g, b in zip(u.index, u.codes, u.gender, u.band):
         for c in cs:
@@ -69,8 +69,8 @@ def main():
         return len(out)
 
     def support_exact(g, b, items):
-        """Без раннього відсікання: потрібен точний розмір, коли значення йде як приріст
-        у жадібному кроці, а не лише для булевого порівняння з K."""
+        """No early exit: the exact size is needed when the value serves as the gain of a greedy
+        step, rather than only for a boolean comparison against K."""
         sets = [idx[l][(g, b, gen_code(c, l))] for c, l in items]
         if not sets:
             return len(u)
@@ -131,18 +131,18 @@ def main():
     d = pd.DataFrame(rows)
     d.to_csv(RES / "who_fails.csv", index=False)
 
-    print(f"\nn={len(d)}, захищено {d.protected.mean():.1%}\n")
-    print("ЧИСЛОВІ ОЗНАКИ (медіана):")
+    print(f"\nn={len(d)}, protected {d.protected.mean():.1%}\n")
+    print("NUMERIC FEATURES (median):")
     for c in ["n_codes", "age", "n_adm", "min_pop", "n_rare10"]:
         a, b_ = d[d.protected][c].median(), d[~d.protected][c].median()
-        print(f"  {c:10s} захищені {a:8.1f}   НЕзахищені {b_:8.1f}")
-    print("\nЧАСТКА НЕЗАХИЩЕНИХ У ГРУПІ:")
+        print(f"  {c:10s} protected {a:8.1f}   UNprotected {b_:8.1f}")
+    print("\nSHARE UNPROTECTED WITHIN GROUP:")
     for c in ["gender", "race", "insurance"]:
         g = d.groupby(c).protected.agg(["mean", "size"])
         g = g[g["size"] >= 30].sort_values("mean")
         for k, r in g.head(6).iterrows():
-            print(f"  {c:10s} {str(k)[:28]:30s} незахищено {1 - r['mean']:5.1%}  (n={int(r['size'])})")
-    print("\nЗА КІЛЬКІСТЮ РІДКІСНИХ КОДІВ:")
+            print(f"  {c:10s} {str(k)[:28]:30s} unprotected {1 - r['mean']:5.1%}  (n={int(r['size'])})")
+    print("\nBY NUMBER OF RARE CODES:")
     d["rare_bin"] = pd.cut(d.n_rare10, [-1, 0, 1, 3, 100], labels=["0", "1", "2-3", "4+"])
     print(d.groupby("rare_bin", observed=True).protected.agg(["mean", "size"]).round(3).to_string())
 

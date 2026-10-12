@@ -1,21 +1,22 @@
-# ── Дані PhysioNet: ніколи не комітити ──────────────────────────────
+# ── PhysioNet data: never commit ────────────────────────────────────
 raw/
 data/
 *.csv.gz
 *.parquet
 *.npy
 
-# ── Похідні файли на рівні пацієнта (містять subject_id) ────────────
+# ── Derived files at the patient level (contain subject_id) ─────────
 results/unit/who_fails.csv
 results/unit/refusal_reason.csv
 results/unit/verify_pool.csv
+results/unit/verify_pool_large.csv
 results/unit/diag_completeness.csv
 *.pkl
 
-# ── Логи прогонів: можуть містити поштучний вивід ───────────────────
+# ── Run logs: may contain per-unit output ───────────────────────────
 *.log
 
-# ── Звичайне ────────────────────────────────────────────────────────
+# ── Housekeeping ────────────────────────────────────────────────────
 .venv/
 __pycache__/
 *.pyc

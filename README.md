@@ -23,11 +23,13 @@ produced by these scripts carry one row per patient and are therefore also withh
 |---|---|
 | `who_fails.csv` | subject id with age, sex, ethnicity, payer |
 | `refusal_reason.csv` | subject id with refusal cause and trajectory length |
-| `verify_pool.csv` | subject id with per-unit audit outcome |
+| `verify_pool.csv`, `verify_pool_large.csv` | subject id with per-unit audit outcome |
 | `diag_completeness.csv` | subject id with per-unit search results |
 | `levels_m*.pkl` | cached per-patient generalization levels |
 
 Everything in `results/` is aggregate: one row per experimental condition, never per person.
+`verify_pool_summary.csv` is the aggregate form of the withheld per-unit audit file, and is the
+source of the certification-gap figure reported in the paper.
 `.gitignore` blocks the raw data, the caches and those four files, so a careless `git add -A`
 cannot leak them.
 
@@ -55,7 +57,7 @@ export PYTHONHASHSEED=0          # several scripts break ties through set iterat
 | Supplementary S1, single attributes | `src/attributes_symmetric.py` | ~20 min |
 | Enforcement cost, reached shares | `src/kmanon.py` | ~15 min |
 | Table 2, fixed vs adaptive adversary | `src/adaptive_adversary.py` | ~10 min |
-| Certification gap (18.2%) | `src/verify_pool.py` | ~20 min |
+| Certification gap (17.1%) | `src/verify_pool.py` (120 units) or `src/verify_pool_large.py` (350) | ~20 / ~60 min |
 | Supplementary S2, selection rule and K=20 | `src/kmanon_k20.py` | ~40 min |
 | Supplementary S3, pool size, paired | `src/pool_paired.py` | ~35 min |
 | Supplementary S4, who is refused | `src/who_fails.py` + `src/race_confound.py` | ~15 min |

@@ -1,23 +1,23 @@
-"""Розширення методу на ВСІ квазіідентифікатори, а не лише коди діагнозів.
+"""Extending the method to ALL quasi-identifiers, not just diagnosis codes.
 
-Попередній прогін показав, що узагальнення самих діагнозів не рятує: додавання року першої
-госпіталізації або однієї процедури зводить захист нанівець (96-99 % ідентифіковано).
+The previous run showed that generalizing the diagnoses alone does not help: adding the year of
+the first admission or a single procedure wipes the protection out (96-99 % identified).
 
-Тут жадібний алгоритм працює над спільним набором атрибутів, кожен зі своєю ієрархією:
+Here the greedy algorithm works over a joint set of attributes, each with its own hierarchy:
 
-  діагноз   повний код -> категорія (3 символи) -> блок (1-2 символи)
-  процедура повний код -> категорія -> блок
-  рік       точний -> п'ятиріччя -> десятиріччя -> прибрано
-  тип госп. точний -> {невідкладна, планова} -> прибрано
-  страховка точна -> прибрано
-  сім. стан точний -> прибрано
-  раса      точна -> укрупнена група -> прибрано
-  вік       десятиріччя -> двадцятиріччя -> прибрано
+  diagnosis  full code -> category (3 chars) -> block (1-2 chars)
+  procedure  full code -> category -> block
+  year       exact -> five-year span -> decade -> dropped
+  adm. type  exact -> {urgent, planned} -> dropped
+  insurance  exact -> dropped
+  marital    exact -> dropped
+  race       exact -> coarse group -> dropped
+  age        decade -> twenty-year band -> dropped
 
-Алгоритм незмінний: на кожному кроці піднімаємо той атрибут, що найбільше збільшує множину
-кандидатів. Змінюється лише простір дій.
+The algorithm itself is unchanged: at each step lift the attribute that increases the candidate
+set the most. Only the action space differs.
 
-Вихід: results/unit/protect_full.csv
+Output: results/unit/protect_full.csv
 """
 from collections import defaultdict
 from pathlib import Path
@@ -77,7 +77,7 @@ def gen_age(b, lvl):
     return f"{n // 20 * 20}s+" if lvl == 1 else str(b)
 
 
-# атрибут -> (функція узагальнення, максимальний рівень)
+# attribute -> (generalization function, maximum level)
 SPEC = {
     "year": (gen_year, 3), "adm_type": (gen_type, 2), "insurance": (gen_plain, 1),
     "marital": (gen_plain, 1), "race": (gen_race, 2), "band": (gen_age, 2),
@@ -111,8 +111,8 @@ def main():
     ppop = pr.groupby("code").subject_id.nunique()
     allpop = {**dpop.to_dict(), **ppop.to_dict()}
 
-    # індекс: (атрибут, рівень, значення) -> множина пацієнтів; для кодів окремо
-    print("індекс популяції...", flush=True)
+    # index: (attribute, level, value) -> set of patients; codes are indexed separately
+    print("population index...", flush=True)
     code_idx = {l: defaultdict(set) for l in range(3)}
     for sid, cs, ps in zip(u.index, u.codes, u.procs):
         items = set(cs) | (ps if isinstance(ps, set) else set())
@@ -128,7 +128,7 @@ def main():
     gender_idx = defaultdict(set)
     for sid, g in zip(u.index, u.gender):
         gender_idx[g].add(sid)
-    print("готово", flush=True)
+    print("done", flush=True)
 
     def cand(sid, known_codes, lvl):
         sets = [gender_idx[u.at[sid, "gender"]]]
@@ -137,7 +137,7 @@ def main():
         for a, (fn, _) in SPEC.items():
             l = lvl[("attr", a)]
             sets.append(attr_idx[a][l][fn(u.at[sid, a], l)])
-        sets.sort(key=len)          # починаємо з найменшої множини — перетин швидший
+        sets.sort(key=len)          # start from the smallest set: the intersection is faster
         return len(set.intersection(*sets))
 
     sample = rng.choice(u.index.values, min(N_SAMPLE, len(u)), replace=False)
@@ -150,7 +150,7 @@ def main():
                 ps = u.at[sid, "procs"]
                 items = list(cs) + (sorted(ps, key=lambda c: ppop.get(c, 0))[:1] if isinstance(ps, set) and ps else [])
                 known = sorted(items, key=lambda c: -allpop.get(c, 0))[:q]
-                if isinstance(ps, set) and ps:                      # процедуру завжди вважаємо відомою
+                if isinstance(ps, set) and ps:                      # a procedure is always taken as known
                     known = list(dict.fromkeys(known + [min(ps, key=lambda c: ppop.get(c, 0))]))
                 lvl = {("code", c): 0 for c in known}
                 lvl.update({("attr", a): 0 for a in SPEC})
@@ -181,8 +181,8 @@ def main():
                              reached=float(np.mean(reached)), mean_cost=float(np.mean(cost)),
                              mean_attrs_raised=float(np.mean(raised))))
             r = rows[-1]
-            print(f"q={q} K={K}: було небезпечних {r['unsafe_before']:.1%}, досягнуто {r['reached']:.1%}, "
-                  f"сумарна глибина {r['mean_cost']:.2f}, з них атрибутів {r['mean_attrs_raised']:.2f}",
+            print(f"q={q} K={K}: was unsafe {r['unsafe_before']:.1%}, reached {r['reached']:.1%}, "
+                  f"total depth {r['mean_cost']:.2f}, of which attributes {r['mean_attrs_raised']:.2f}",
                   flush=True)
 
     out = pd.DataFrame(rows)

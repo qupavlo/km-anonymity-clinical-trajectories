@@ -1,23 +1,29 @@
-"""Корисність релізу, який РЕАЛЬНО дотримується політики відмови (закриває M7).
+"""Utility of a release that ACTUALLY honours the refusal policy (closes M7).
 
-Попередній замір (`utility_kmanon.py`) рахував AUROC на когорті, що містить і ті юніти, яким
-метод відмовив би у випуску. Тобто міряно ціну УЗАГАЛЬНЕННЯ, а не ціну RELEASE POLICY.
-Це завищує корисність і, що гірше, ховає ефект, на який вказує §V-H: відмовлені пацієнти мають
-істотно більше госпіталізацій, тож вилучення 26-27 % пацієнтів вилучає НЕПРОПОРЦІЙНО більшу
-частку самих подій реадмісії — цільової змінної.
+The earlier measurement (`utility_kmanon.py`) computed AUROC on a cohort that still contained the
+units the method would refuse to release. It therefore measured the cost of GENERALIZATION, not
+the cost of the RELEASE POLICY. That overstates utility and, worse, hides the effect §V-H points
+at: refused patients have substantially more admissions, so removing 26-27 % of patients removes
+a DISPROPORTIONATELY larger share of the readmission events themselves, i.e. of the target.
 
-Чотири лінії розділяють два ефекти, які досі були злиті:
-  original              всі пацієнти, сирі коди            (базова лінія)
-  km_m3                 всі пацієнти, огрублено            (= те, що міряли досі)
-  original_kept         лише допущені, сирі коди           (ізолює ефект ВІДСІВУ)
-  km_m3_kept            лише допущені, огрублено           (реальний реліз)
+Four arms separate two effects that used to be conflated:
+  original              all patients, raw codes             (baseline)
+  km_m3                 all patients, coarsened             (= what was measured until now)
+  original_kept         kept patients only, raw codes       (isolates the effect of the FILTERING)
+  km_m3_kept            kept patients only, coarsened       (the real release)
 
-Порівняння km_m3_kept проти original — повна ціна політики. Порівняння original_kept проти
-original — та її частина, що пояснюється самим відсівом, без жодного огрублення.
+km_m3_kept against original is the full cost of the policy. original_kept against original is the
+part of it explained by the filtering alone, with no coarsening at all.
 
-Додатково звітуємо, яку частку ПОДІЙ реадмісії прибирає відмова, проти частки пацієнтів.
+We additionally report what share of the readmission EVENTS the refusal removes, against the
+share of patients.
 
-Вихід: results/unit/utility_refusal.csv
+Known defect, corrected in `utility_trainset.py`: the `*_kept` arms here restrict both the
+training AND the test part to kept patients, so the arms are scored on different populations with
+different base rates. The AUROC gap then partly measures how much easier one task is than the
+other rather than what the controller loses.
+
+Output: results/unit/utility_refusal.csv
 """
 import pickle
 import sys
@@ -39,9 +45,9 @@ ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "results" / "unit"
 K_TARGET, MAXLVL, MAX_STEPS = 5, 2, 40
 N_PATIENTS = 8000
-N_REPEATS = 25        # 5 давало MDE ~0.024 AUROC — на межі ефекту, що міряємо
+N_REPEATS = 25        # 5 gave an MDE of ~0.024 AUROC, i.e. the size of the effect being measured
 WINDOW = 30
-SEED = 20261007          # той самий, що в utility_kmanon.py — когорта збігається
+SEED = 20261007          # same as in utility_kmanon.py, so the cohort coincides
 M = 3
 
 
@@ -66,7 +72,7 @@ def main():
     u = u.join(pts.set_index("subject_id")[["gender", "band"]], how="inner")
     u = u[u.gender.notna() & u.band.notna()]
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     idx = {l: defaultdict(set) for l in range(MAXLVL + 1)}
     for sid, cs, g, b in zip(u.index, u.codes, u.gender, u.band):
         for c in cs:
@@ -86,10 +92,11 @@ def main():
         return len(out)
 
     def support_exact(g, b, items):
-        """Без раннього відсікання. Потрібен там, де значення йде як ПРИРІСТ у жадібному кроці:
-        `support()` повертає розмір часткового перетину щойно той падає нижче K, тобто завищене
-        число 0..K-1, і жадібний крок може обрати гірший код. У `utility_kmanon.py` цей баг
-        лишився, тому рівні там не ті, чию вартість заявляє стаття."""
+        """No early exit. Needed wherever the value serves as the GAIN of a greedy step:
+        `support()` returns the size of the partial intersection as soon as it drops below K,
+        i.e. an inflated number in 0..K-1, and the greedy step may then pick the worse code.
+        That bug is still present in `utility_kmanon.py`, so the levels there are not the ones
+        whose cost the paper claims."""
         sets = [idx[l][(g, b, gen_code(c, l))] for c, l in items]
         if not sets:
             return len(u)
@@ -116,12 +123,12 @@ def main():
         return w, wset
 
     def km_levels(sid, m):
-        """Повертає (рівні, чи досягнуто гарантію, причина, кроки).
+        """Returns (levels, whether the guarantee was reached, reason, steps).
 
-        Причина розділяє два випадки, які досі зливалися в одне число «unreachable»:
-          hierarchy  ієрархію вичерпано — підняти вже нічого (це те, що стаття стверджує)
-          max_steps  обрив на ліміті кроків — зовсім інше твердження
-        Юніт із 276 кодами не може завершитися за 40 кроків у принципі.
+        The reason separates two cases that used to collapse into a single "unreachable" count:
+          hierarchy  the hierarchy is exhausted, nothing left to lift (what the paper claims)
+          max_steps  cut off at the step limit, which is an entirely different claim
+        A unit with 276 codes cannot finish within 40 steps even in principle.
         """
         cs = sorted(u.at[sid, "codes"])
         g, b = u.at[sid, "gender"], u.at[sid, "band"]
@@ -135,7 +142,7 @@ def main():
                 if lvl[c] >= MAXLVL:
                     continue
                 t = dict(lvl); t[c] += 1
-                v = support_exact(g, b, [(x, t[x]) for x in wset])   # НЕ support(): див. вище
+                v = support_exact(g, b, [(x, t[x]) for x in wset])   # NOT support(): see above
                 if v > gain:
                     best, gain = c, v
             if best is None:
@@ -146,11 +153,11 @@ def main():
 
     sample = rng.choice(u.index.values, min(N_PATIENTS, len(u)), replace=False)
     u = u.loc[sample]
-    print(f"підвибірка {len(u)}; обчислюю рівні m={M}...", flush=True)
+    print(f"subsample {len(u)}; computing levels m={M}...", flush=True)
     cache = RES / f"levels_m{M}_n{N_PATIENTS}_s{SEED}.pkl"
     if cache.exists():
         LV, KEPT, WHY, STEPS = pickle.loads(cache.read_bytes())
-        print(f"рівні з кешу {cache.name}", flush=True)
+        print(f"levels from cache {cache.name}", flush=True)
     else:
         LV, KEPT, WHY, STEPS = {}, {}, {}, {}
         for n, sid in enumerate(u.index):
@@ -163,9 +170,9 @@ def main():
     refused = len(u) - len(kept_ids)
     n_hier = sum(1 for s in WHY.values() if s == "hierarchy")
     n_cap = sum(1 for s in WHY.values() if s == "max_steps")
-    print(f"\nвідмовлено {refused}/{len(u)} = {refused/len(u):.1%} пацієнтів", flush=True)
-    print(f"  з них ієрархію вичерпано: {n_hier} ({n_hier/max(refused,1):.1%} відмов)")
-    print(f"  з них обрив на MAX_STEPS={MAX_STEPS}: {n_cap} ({n_cap/max(refused,1):.1%} відмов)",
+    print(f"\nrefused {refused}/{len(u)} = {refused/len(u):.1%} patients", flush=True)
+    print(f"  of these, hierarchy exhausted: {n_hier} ({n_hier/max(refused,1):.1%} refusals)")
+    print(f"  of these, stopped at MAX_STEPS={MAX_STEPS}: {n_cap} ({n_cap/max(refused,1):.1%} refusals)",
           flush=True)
     pd.DataFrame([dict(sid=s, kept=KEPT[s], why=WHY[s], steps=STEPS[s],
                        n_codes=len(u.at[s, "codes"])) for s in u.index]
@@ -174,14 +181,14 @@ def main():
     by = dx.groupby("hadm_id").code.apply(list)
     adm = adm[adm.hadm_id.isin(by.index) & adm.subject_id.isin(u.index)].reset_index(drop=True)
 
-    # --- ключове число для §V-G: скільки ПОДІЙ прибирає відмова ---
+    # --- key number for §V-G: how many EVENTS the refusal removes ---
     in_kept = adm.subject_id.isin(kept_ids)
     ev_all, ev_kept = int(adm.y.sum()), int(adm[in_kept].y.sum())
     adm_all, adm_kept = len(adm), int(in_kept.sum())
-    print(f"пацієнтів збережено {len(kept_ids)}/{len(u)} = {len(kept_ids)/len(u):.1%}")
-    print(f"госпіталізацій      {adm_kept}/{adm_all} = {adm_kept/adm_all:.1%}")
-    print(f"ПОДІЙ реадмісії     {ev_kept}/{ev_all} = {ev_kept/ev_all:.1%}")
-    print(f"базова частота: всі {adm.y.mean():.4f}, допущені {adm[in_kept].y.mean():.4f}",
+    print(f"patients kept {len(kept_ids)}/{len(u)} = {len(kept_ids)/len(u):.1%}")
+    print(f"admissions          {adm_kept}/{adm_all} = {adm_kept/adm_all:.1%}")
+    print(f"READMISSION EVENTS  {ev_kept}/{ev_all} = {ev_kept/ev_all:.1%}")
+    print(f"base rate: all {adm.y.mean():.4f}, admitted {adm[in_kept].y.mean():.4f}",
           flush=True)
 
     def docs(rows, coarsen):
@@ -215,17 +222,17 @@ def main():
             PER_REP[(name, mdl)] = a
             rows.append(dict(arm=name, model=mdl, n_adm=len(rws), n_pat=rws.subject_id.nunique(),
                              base_rate=float(y.mean()), auroc=float(a.mean()),
-                             auroc_sd=float(a.std(ddof=1)),          # ddof=1: 5 повторів
+                             auroc_sd=float(a.std(ddof=1)),          # ddof=1: sample sd over repeats
                              auroc_lo=float(a.mean() - 1.96 * a.std(ddof=1) / np.sqrt(len(a))),
                              auroc_hi=float(a.mean() + 1.96 * a.std(ddof=1) / np.sqrt(len(a))),
                              ap=float(np.mean(aps))))
             print(f"{name:16s} {mdl:7s} n_adm={len(rws):6d} AUROC {a.mean():.4f} "
                   f"± {a.std(ddof=1):.4f}", flush=True)
 
-    # --- ПАРНИЙ тест там, де рядки збігаються (ті самі спліти, ті самі госпіталізації) ---
+    # --- PAIRED test where the rows coincide (same splits, same admissions) ---
     from scipy import stats
-    pairs = [("km_m3", "original", "огрублення на повній популяції"),
-             ("km_m3_kept", "original_kept", "огрублення всередині релізу")]
+    pairs = [("km_m3", "original", "coarsening on the full population"),
+             ("km_m3_kept", "original_kept", "coarsening within the release")]
     prows = []
     for mdl in ("lr_fix", "lr_cv"):
         for a, b, label in pairs:
@@ -235,10 +242,11 @@ def main():
             prows.append(dict(model=mdl, test="paired", a=a, b=b, mean_diff=float(d.mean()),
                               ci_lo=float(ci[0]), ci_hi=float(ci[1]), t=float(t), p=float(pv),
                               n_rep=len(d), note=label))
-            print(f"[парний] {mdl} {a} − {b}: Δ={d.mean():+.4f} "
+            print(f"[paired] {mdl} {a} − {b}: Δ={d.mean():+.4f} "
                   f"CI[{ci[0]:+.4f},{ci[1]:+.4f}] t={t:.2f} p={pv:.3f}", flush=True)
-        # ефект ВІДМОВИ: різні популяції, тож парний тест незастосовний — непарний + явна позначка
-        for a, b, label in [("original_kept", "original", "ефект відсіву (різні популяції)")]:
+        # effect of the REFUSAL: different populations, so a paired test does not apply; unpaired,
+        # and flagged as such in the output
+        for a, b, label in [("original_kept", "original", "effect of exclusion (different populations)")]:
             x, y = PER_REP[(a, mdl)], PER_REP[(b, mdl)]
             t, pv = stats.ttest_ind(x, y, equal_var=False)
             diff = x.mean() - y.mean()
@@ -246,21 +254,21 @@ def main():
             prows.append(dict(model=mdl, test="unpaired_welch", a=a, b=b, mean_diff=float(diff),
                               ci_lo=float(diff - 1.96 * se), ci_hi=float(diff + 1.96 * se),
                               t=float(t), p=float(pv), n_rep=len(x), note=label))
-            print(f"[непарний] {mdl} {a} − {b}: Δ={diff:+.4f} "
+            print(f"[unpaired] {mdl} {a} − {b}: Δ={diff:+.4f} "
                   f"CI[{diff-1.96*se:+.4f},{diff+1.96*se:+.4f}] t={t:.2f} p={pv:.4f}", flush=True)
     pd.DataFrame(prows).to_csv(RES / "utility_refusal_tests.csv", index=False)
 
     out = pd.DataFrame(rows)
     meta = pd.DataFrame([dict(arm="_meta", model="-", n_adm=adm_all, n_pat=len(u),
                               base_rate=float(adm.y.mean()), auroc=np.nan, auroc_sd=np.nan,
-                              auroc_lo=refused / len(u),      # частка відмовлених пацієнтів
-                              auroc_hi=1 - ev_kept / ev_all,  # частка вилучених ПОДІЙ
+                              auroc_lo=refused / len(u),      # share of refused patients
+                              auroc_hi=1 - ev_kept / ev_all,  # share of removed EVENTS
                               ap=np.nan)])
     pd.concat([out, meta]).to_csv(RES / "utility_refusal.csv", index=False)
     print()
     print(out.round(4).to_string(index=False))
-    print(f"\n_meta: відмовлено пацієнтів {refused/len(u):.1%}, "
-          f"вилучено подій реадмісії {1 - ev_kept/ev_all:.1%}")
+    print(f"\n_meta: patients refused {refused/len(u):.1%}, "
+          f"readmission events removed {1 - ev_kept/ev_all:.1%}")
 
 
 if __name__ == "__main__":

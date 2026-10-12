@@ -1,18 +1,19 @@
-"""Коректна kᵐ-анонімність при K=20 і чесна базова лінія для правила вибору.
+"""Correct k^m-anonymity at K=20, plus an honest baseline for the selection rule.
 
-Дві прогалини, які знайшла рецензія.
+Two gaps found by the review.
 
-1. K=20 прогнано лише для ОСЛАБЛЕНОЇ схеми (`protect.csv`, `baselines.csv`). Під коректною kᵐ
-   є тільки K=5, хоча K=20 ближчий до порогів, які реально ставлять у релізах.
+1. K=20 had been run only for the WEAKENED scheme (`protect.csv`, `baselines.csv`). Under the
+   correct k^m only K=5 existed, even though K=20 is closer to the thresholds actually used in
+   real releases.
 
-2. Порівняння greedy проти random у `baselines_kmanon.py` насправді протиставляє зворотний
-   зв'язок його відсутності, а не правила вибору: `spend()` роздає бюджет наосліп, жодного разу
-   не перевіряючи критерій, тоді як greedy перевіряє щокроку. Тут додано чесну базову лінію
-   `random_in_violating`: той самий цикл зі зворотним зв'язком, та сама кількість кроків, але
-   код для підняття обирається ВИПАДКОВО з порушеної множини, а не за максимальним приростом.
-   Різниця між нею і greedy — це внесок саме правила вибору.
+2. The greedy-versus-random comparison in `baselines_kmanon.py` really contrasts feedback with
+   the absence of feedback rather than two selection rules: `spend()` hands out the budget
+   blindly and never checks the criterion, whereas greedy checks it at every step. An honest
+   baseline, `random_in_violating`, is added here: the same feedback loop and the same number of
+   steps, but the code to raise is chosen AT RANDOM from the violating set instead of by maximum
+   gain. The difference between it and greedy is the contribution of the selection rule alone.
 
-Вихід: results/unit/kmanon_k20.csv
+Output: results/unit/kmanon_k20.csv
 """
 import sys
 from collections import defaultdict
@@ -46,13 +47,13 @@ def main():
     u = u.join(pts.set_index("subject_id")[["gender", "band"]], how="inner")
     u = u[u.gender.notna() & u.band.notna()]
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     idx = {l: defaultdict(set) for l in range(MAXLVL + 1)}
     for sid, cs, g, b in zip(u.index, u.codes, u.gender, u.band):
         for c in cs:
             for l in range(MAXLVL + 1):
                 idx[l][(g, b, gen_code(c, l))].add(sid)
-    print("готово", flush=True)
+    print("done", flush=True)
 
     def sup_exact(g, b, items):
         sets = [idx[l][(g, b, gen_code(c, l))] for c, l in items]
@@ -78,8 +79,8 @@ def main():
         return w, wset
 
     def run(g, b, cs, m, K, rule):
-        """rule: 'greedy' — максимальний приріст; 'random' — випадковий код з порушеної множини.
-        Обидва бачать однаковий зворотний зв'язок і мають однаковий ліміт кроків."""
+        """rule: 'greedy' takes the maximum gain; 'random' takes a random code from the violating
+        set. Both see the same feedback and share the same step limit."""
         lvl = {c: 0 for c in cs}
         steps = 0
         while steps < MAX_STEPS:
@@ -132,7 +133,7 @@ def main():
                   f"[{row['greedy_lo']:.3f},{row['greedy_hi']:.3f}]  "
                   f"random-in-violating {row['random_in_viol']:.3f} "
                   f"[{row['random_in_viol_lo']:.3f},{row['random_in_viol_hi']:.3f}]  "
-                  f"ціна {row['mean_cost_greedy']:.1f} / {row['mean_cost_random']:.1f}", flush=True)
+                  f"cost {row['mean_cost_greedy']:.1f} / {row['mean_cost_random']:.1f}", flush=True)
 
     out = pd.DataFrame(rows)
     out.to_csv(RES / "kmanon_k20.csv", index=False)

@@ -1,17 +1,17 @@
-"""Ціна захисту, виміряна в якості навчання, а не в кількості змінених кодів.
+"""Cost of protection measured in model quality, not in the number of codes changed.
 
-Задача: прогноз внутрішньолікарняної летальності за набором діагнозів госпіталізації
-(hospital_expire_flag з admissions). Проста, перевірювана, не потребує GPU.
+Task: predict in-hospital mortality from an admission's set of diagnoses (hospital_expire_flag
+from admissions). Simple, checkable, no GPU needed.
 
-Порівнюємо чотири версії навчальних даних за однакового розбиття й однакової моделі:
-  original    без змін
-  greedy      наш метод (q відомих діагнозів, ціль K)
-  random      випадкове узагальнення тієї самої сумарної глибини
-  all_level1  усі коди юніта на 1 рівень угору (рівномірне огрубіння як верхня межа ціни)
+Four versions of the training data are compared under the same split and the same model:
+  original    unchanged
+  greedy      our method (q known diagnoses, target K)
+  random      random generalization of the same total depth
+  all_level1  every code of the unit lifted one level (uniform coarsening, an upper bound on cost)
 
-Розбиття за пацієнтами, щоб той самий пацієнт не потрапив і в навчання, і в тест.
+The split is by patient, so the same patient never lands in both train and test.
 
-Вихід: results/unit/utility.csv
+Output: results/unit/utility.csv
 """
 from collections import defaultdict
 from pathlib import Path
@@ -56,7 +56,7 @@ def main():
     u = u[u.gender.notna() & u.band.notna()]
     pop = dx.groupby("code").subject_id.nunique()
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     idx = {}
     for lvl in range(MAXLVL + 1):
         m = defaultdict(set)
@@ -69,8 +69,8 @@ def main():
         sets = [idx[l].get((g, b, generalize(c, l)), set()) for c, l in chosen]
         return len(set.intersection(*sets)) if sets else len(u)
 
-    # рівні узагальнення для кожного пацієнта за кожною політикою
-    print("обчислюю політики...", flush=True)
+    # generalization levels per patient under each policy
+    print("computing policies...", flush=True)
     lv_greedy, lv_random = {}, {}
     for sid in u.index:
         cs = list(u.at[sid, "codes"])
@@ -103,11 +103,11 @@ def main():
             i += 1
         lv_random[sid] = rl
 
-    # ознаки: мішок кодів госпіталізації під кожною політикою
+    # features: bag of the admission's codes under each policy
     adm = adm[adm.subject_id.isin(u.index)]
     by_adm = dx[dx.subject_id.isin(u.index)].groupby("hadm_id").code.apply(list)
     adm = adm[adm.hadm_id.isin(by_adm.index)].reset_index(drop=True)
-    print(f"госпіталізацій {len(adm)}, летальність {adm.hospital_expire_flag.mean():.4f}", flush=True)
+    print(f"admissions {len(adm)}, mortality {adm.hospital_expire_flag.mean():.4f}", flush=True)
 
     def docs(policy):
         out = []
@@ -144,7 +144,7 @@ def main():
                          ap=np.mean(aps), ap_sd=np.std(aps),
                          vocab=len(set(w for d in X_txt for w in d.split()))))
         print(f"{policy:12s} AUROC {np.mean(aucs):.4f} ± {np.std(aucs):.4f}  "
-              f"AP {np.mean(aps):.4f}  словник {rows[-1]['vocab']}", flush=True)
+              f"AP {np.mean(aps):.4f}  vocab {rows[-1]['vocab']}", flush=True)
 
     out = pd.DataFrame(rows)
     out["auroc_drop"] = out.auroc.iloc[0] - out.auroc

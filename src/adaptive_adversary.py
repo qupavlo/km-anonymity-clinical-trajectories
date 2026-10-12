@@ -1,20 +1,21 @@
-"""Адаптивний супротивник: чи витримує захист, якщо знання обирають розумно.
+"""Adaptive adversary: does the protection hold if the background knowledge is chosen cleverly?
 
-Досі ми фіксували знання супротивника наперед: q найчастіших діагнозів (реалістичний сценарій)
-або q найрідкісніших (найгірший за популяційною рідкісністю). Але супротивник, який бачить
-випущений набір, може обрати ті q кодів, що РЕАЛЬНО найсильніше звужують коло саме для цього
-пацієнта, тобто застосувати нашу ж логіку проти нас.
+So far the adversary's knowledge was fixed in advance: the q most frequent diagnoses (the
+realistic scenario) or the q rarest ones (the worst case by population rarity). But an adversary
+who sees the released set can pick the q codes that ACTUALLY narrow the candidate set the most
+for this particular patient, i.e. turn our own logic against us.
 
-Порівнюємо чотири стратегії вибору знання, кожну — ПІСЛЯ застосування захисту:
-  common   q найчастіших у популяції (реалістичний)
-  rare     q найрідкісніших у популяції (наш "найгірший випадок")
-  adaptive q кодів, що мінімізують множину кандидатів (повний перебір сполучень)
-  oracle   adaptive + вільний вибір серед УСІХ кодів пацієнта, не лише відомих захисту
+Four knowledge-selection strategies are compared, each evaluated AFTER the protection is applied:
+  common   the q most frequent codes in the population (realistic)
+  rare     the q rarest codes in the population (our "worst case")
+  adaptive the q codes that minimize the candidate set (exhaustive search over combinations)
+  oracle   adaptive plus a free choice among ALL of the patient's codes, not only those the
+           protection was built for
 
-Ключове питання: захист будувався під припущення про конкретні q кодів. Чи лишається він
-дійсним, якщо супротивник знає інші q?
+The key question: the protection was built assuming a specific set of q codes. Does it remain
+valid if the adversary knows a different q?
 
-Вихід: results/unit/adaptive.csv
+Output: results/unit/adaptive.csv
 """
 from collections import defaultdict
 from itertools import combinations
@@ -30,7 +31,7 @@ K_TARGET = 5
 N_SAMPLE = 1500
 MAXLVL = 2
 SEED = 20261007
-MAX_COMB = 2000          # обмеження перебору сполучень
+MAX_COMB = 2000          # cap on the number of combinations enumerated
 
 
 def gen_code(code, lvl):
@@ -52,7 +53,7 @@ def main():
     u = u[u.gender.notna() & u.band.notna()]
     pop = dx.groupby("code").subject_id.nunique().to_dict()
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     idx = {l: defaultdict(set) for l in range(MAXLVL + 1)}
     for sid, cs, g, b in zip(u.index, u.codes, u.gender, u.band):
         for c in cs:
@@ -67,7 +68,7 @@ def main():
         return len(set.intersection(*sets))
 
     def protect(g, b, known, K):
-        """Жадібне узагальнення під ЗАДАНЕ знання (як у основному методі)."""
+        """Greedy generalization against a GIVEN set of known codes (as in the main method)."""
         lvl = {c: 0 for c in known}
         for _ in range(MAXLVL * len(known)):
             if cand(g, b, [(c, lvl[c]) for c in known]) >= K:
@@ -93,22 +94,22 @@ def main():
             g, b = u.at[sid, "gender"], u.at[sid, "band"]
             if len(cs) < q:
                 continue
-            # захист будуємо під "найрідкісніші" — як у основному методі
+            # the protection is built assuming the "rarest" codes are known, as in the main method
             assumed = sorted(cs, key=lambda c: pop.get(c, 0))[:q]
             lvl_all = protect(g, b, assumed, K_TARGET)
-            # рівні застосовано до всього юніта: код, який захист не чіпав, лишається на 0
+            # levels apply to the whole unit: a code the protection never touched stays at 0
             lvl_full = {c: lvl_all.get(c, 0) for c in cs}
 
             res["assumed"].append(cand(g, b, [(c, lvl_full[c]) for c in assumed]))
 
-            # супротивник обирає інші q кодів із ЗАХИЩЕНОГО юніта
+            # the adversary picks a different q codes from the PROTECTED unit
             for name, pick in (("common", sorted(cs, key=lambda c: -pop.get(c, 0))[:q]),
                                ("rare", sorted(cs, key=lambda c: pop.get(c, 0))[:q])):
                 res[name].append(cand(g, b, [(c, lvl_full[c]) for c in pick]))
 
-            # adaptive: перебір сполучень, беремо найгірше для пацієнта
-            # сортуємо за ФАКТИЧНИМ support узагальненого коду, а не за pop вихідного:
-            # pop не містить узагальнених кодів, тож старий ключ давав усім 10**9
+            # adaptive: enumerate combinations and keep the worst case for the patient.
+            # Sort by the ACTUAL support of the generalized code, not by pop of the original one:
+            # pop contains no generalized codes, so the old key returned 10**9 for every candidate.
             pool = sorted(cs, key=lambda c: len(idx[lvl_full[c]].get(
                 (g, b, gen_code(c, lvl_full[c])), ())))[:14]
             best = 10**9
@@ -125,8 +126,8 @@ def main():
             row[f"{m}_median"] = float(np.median(a))
             row[f"{m}_safe"] = float(np.mean(a >= K_TARGET))
         rows.append(row)
-        print(f"q={q}: захист будувався під 'rare' → безпечних {row['assumed_safe']:.1%}; "
-              f"якщо супротивник знає common {row['common_safe']:.1%}, "
+        print(f"q={q}: protection built for 'rare' -> safe {row['assumed_safe']:.1%}; "
+              f"if the adversary knows common {row['common_safe']:.1%}, "
               f"rare {row['rare_safe']:.1%}, adaptive {row['adaptive_safe']:.1%}", flush=True)
 
     out = pd.DataFrame(rows)

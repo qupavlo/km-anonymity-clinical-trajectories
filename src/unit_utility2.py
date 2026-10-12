@@ -1,15 +1,15 @@
-"""Ціна захисту в якості навчання, задача без витоку.
+"""Cost of protection in model quality, on a task with no leakage.
 
-Задача: чи буде ПОВТОРНА госпіталізація протягом 30 днів після виписки.
-Ознаки — коди ПОПЕРЕДНЬОЇ госпіталізації, ціль лежить у майбутньому відносно ознак,
-тому кодів, що фіксують результат, тут бути не може (на відміну від летальності,
-де нагору вийшли «паліативна допомога» і «не реанімувати»).
+Task: whether a READMISSION follows within 30 days of discharge. The features are the codes of
+the PREVIOUS admission and the target lies in the future relative to them, so no code here can
+record the outcome (unlike mortality, where "palliative care" and "do not resuscitate" came out
+on top).
 
-Виключаємо госпіталізації, що закінчилися смертю: для них повторної бути не може.
+Admissions that ended in death are excluded: they cannot be followed by a readmission.
 
-Порівнюємо ті самі політики, що й раніше: original / greedy / random / all_level1.
+The same policies are compared as before: original / greedy / random / all_level1.
 
-Вихід: results/unit/utility_readmission.csv
+Output: results/unit/utility_readmission.csv
 """
 from collections import defaultdict
 from pathlib import Path
@@ -48,19 +48,19 @@ def main():
                       usecols=["subject_id", "gender", "anchor_age"])
     pts["band"] = (pts.anchor_age // 10 * 10).astype(int).astype(str) + "s"
 
-    # ціль: наступна госпіталізація того самого пацієнта протягом 30 днів
+    # target: the same patient's next admission within 30 days
     adm = adm.sort_values(["subject_id", "admittime"]).reset_index(drop=True)
     adm["next_admit"] = adm.groupby("subject_id").admittime.shift(-1)
     adm["gap"] = (adm.next_admit - adm.dischtime).dt.total_seconds() / 86400
     adm["y"] = ((adm.gap >= 0) & (adm.gap <= WINDOW_DAYS)).astype(int)
-    adm = adm[adm.hospital_expire_flag == 0]          # померлі не можуть повернутися
+    adm = adm[adm.hospital_expire_flag == 0]          # the deceased cannot come back
 
     unit = dx.groupby("subject_id").code.apply(set)
     u = pd.DataFrame({"codes": unit}).join(pts.set_index("subject_id")[["gender", "band"]], how="inner")
     u = u[u.gender.notna() & u.band.notna()]
     pop = dx.groupby("code").subject_id.nunique()
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     idx = {}
     for lvl in range(MAXLVL + 1):
         m = defaultdict(set)
@@ -73,7 +73,7 @@ def main():
         sets = [idx[l].get((g, b, generalize(c, l)), set()) for c, l in chosen]
         return len(set.intersection(*sets)) if sets else len(u)
 
-    print("обчислюю політики...", flush=True)
+    print("computing policies...", flush=True)
     lv_greedy, lv_random = {}, {}
     for sid in u.index:
         cs = list(u.at[sid, "codes"])
@@ -107,7 +107,7 @@ def main():
 
     by_adm = dx[dx.subject_id.isin(u.index)].groupby("hadm_id").code.apply(list)
     adm = adm[adm.hadm_id.isin(by_adm.index) & adm.subject_id.isin(u.index)].reset_index(drop=True)
-    print(f"госпіталізацій {len(adm)}, повторних протягом {WINDOW_DAYS} днів "
+    print(f"admissions {len(adm)}, repeat within {WINDOW_DAYS} days "
           f"{adm.y.mean():.4f} ({adm.y.sum()})", flush=True)
 
     def docs(policy):
@@ -141,7 +141,7 @@ def main():
         rows.append(dict(policy=policy, auroc=np.mean(aucs), auroc_sd=np.std(aucs),
                          ap=np.mean(aps), vocab=len(set(w for d in X_txt for w in d.split()))))
         print(f"{policy:12s} AUROC {np.mean(aucs):.4f} ± {np.std(aucs):.4f}  "
-              f"AP {np.mean(aps):.4f}  словник {rows[-1]['vocab']}", flush=True)
+              f"AP {np.mean(aps):.4f}  vocab {rows[-1]['vocab']}", flush=True)
 
     out = pd.DataFrame(rows)
     out["auroc_drop"] = out.auroc.iloc[0] - out.auroc

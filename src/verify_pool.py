@@ -1,21 +1,23 @@
-"""Незалежний верифікатор: чи «reached» означає виконання kᵐ, чи лише «pool нічого не знайшов».
+"""Independent verifier: does "reached" mean k^m holds, or only that the pool found nothing?
 
-Претензія рецензії (CRITICAL). Жадібний алгоритм шукає найгіршу підмножину лише серед 14 кодів із
-найменшим ОДИНИЧНИМ support. Anti-monotonicity цього не виправдовує: вона каже, що support
-надмножини <= support підмножини, але НЕ що пара з мінімальним support складається з кодів із малим
-одиничним support. Два поширені коди, які майже не співіснують, дають |C| < K і в pool не
-потрапляють. Оскільки той самий обрізаний пошук є і оптимізатором, і аудитом, «reached» може
-означати «евристика не знайшла порушення».
+Review claim (CRITICAL). The greedy algorithm looks for the worst subset only among the 14 codes
+with the smallest SINGLE-code support. The capped pool is a heuristic, not sound Apriori pruning:
+anti-monotonicity says the support of a superset is <= the support of a subset, but NOT that the
+pair with minimal support is made of codes with small single support. Two common codes that
+hardly ever co-occur give |C| < K and never enter the pool. Since the same truncated search is
+both the optimizer and the audit, "reached" may only mean "the heuristic found no violation".
 
-Попередня перевірка повноти (`diag_completeness.py`) була тавтологічною: з 94 юнітів лише 27 мали
-понад 14 кодів, тож для решти pool дорівнював усьому набору. Жоден юніт не мав понад 22 коди, тоді
-як 72 % відмовлених мають понад 22.
+The previous completeness check (`diag_completeness.py`) was tautological: of 94 units only 27 had
+more than 14 codes, so for the rest the pool was the whole set. No unit had more than 22 codes,
+whereas 72 % of the refused units have more than 22.
 
-Тут перевіряємо саме небезпечний режим: ДОВГІ траєкторії, і не повним перебором (неможливо), а
-ВИПАДКОВОЮ вибіркою підмножин. Випадковий пошук не доводить коректності, але дає чесну верхню межу
-на частку пропусків замість заявлених «0,0 %».
+Here we test exactly the dangerous regime: LONG trajectories, and not by exhaustive enumeration
+(impossible) but by RANDOM sampling of subsets. The randomized search is an independent audit, but
+it is itself incomplete: it proves nothing about correctness and the violations it finds are a
+lower bound on the true count. What it does give is an honest upper bound on the miss rate (via
+the rule of three, below) instead of the claimed "0.0 %".
 
-Вихід: results/unit/verify_pool.csv
+Output: results/unit/verify_pool.csv
 """
 import sys
 from collections import defaultdict
@@ -33,9 +35,9 @@ RES = ROOT / "results" / "unit"
 K_TARGET, MAXLVL, MAX_STEPS = 5, 2, 40
 M = 3
 POOL = 14
-MIN_CODES = 23            # саме той режим, якого бракувало перевірці
+MIN_CODES = 23            # exactly the regime the previous check was missing
 N_UNITS = 120
-N_RANDOM = 30000          # випадкових підмножин на юніт
+N_RANDOM = 30000          # random subsets per unit
 SEED = 20261008
 
 
@@ -50,7 +52,7 @@ def main():
     u = u.join(pts.set_index("subject_id")[["gender", "band"]], how="inner")
     u = u[u.gender.notna() & u.band.notna()]
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     idx = {l: defaultdict(set) for l in range(MAXLVL + 1)}
     for sid, cs, g, b in zip(u.index, u.codes, u.gender, u.band):
         for c in cs:
@@ -70,7 +72,7 @@ def main():
         return len(out)
 
     def worst_pool(g, b, cs, lvl, m):
-        """Те, що робить алгоритм статті: перебір лише в межах pool."""
+        """What the paper's algorithm does: enumerate only within the pool."""
         sup1 = {c: sup(g, b, [(c, lvl[c])]) for c in cs}
         w, wset = min(sup1.values()), [min(sup1, key=sup1.get)]
         pool = sorted(cs, key=lambda c: sup1[c])[:POOL]
@@ -82,7 +84,7 @@ def main():
         return w, wset
 
     def worst_random(g, b, cs, lvl, m, n_draw):
-        """Незалежний пошук: випадкові підмножини з УСЬОГО набору, без обрізання."""
+        """Independent search: random subsets drawn from the WHOLE set, with no truncation."""
         best, best_set = len(u), None
         arr = np.array(cs, dtype=object)
         for _ in range(n_draw):
@@ -95,7 +97,7 @@ def main():
         return best, best_set
 
     long_units = [sid for sid in u.index if len(u.at[sid, "codes"]) >= MIN_CODES]
-    print(f"юнітів з >= {MIN_CODES} кодами: {len(long_units)}", flush=True)
+    print(f"units with >= {MIN_CODES} codes: {len(long_units)}", flush=True)
     sample = rng.choice(long_units, min(N_UNITS, len(long_units)), replace=False)
 
     rows = []
@@ -103,7 +105,7 @@ def main():
         cs = sorted(u.at[sid, "codes"])
         g, b = u.at[sid, "gender"], u.at[sid, "band"]
         lvl = {c: 0 for c in cs}
-        # прогнати жадібний алгоритм рівно так, як у статті
+        # run the greedy algorithm exactly as in the paper
         steps = 0
         while steps < MAX_STEPS:
             w, wset = worst_pool(g, b, cs, lvl, M)
@@ -122,7 +124,7 @@ def main():
             steps += 1
         w_pool, _ = worst_pool(g, b, cs, lvl, M)
         reached_pool = w_pool >= K_TARGET
-        # НЕЗАЛЕЖНА перевірка того самого кінцевого стану
+        # INDEPENDENT check of that same final state
         w_rand, rset = worst_random(g, b, cs, lvl, M, N_RANDOM)
         rows.append(dict(sid=int(sid), n_codes=len(cs), steps=steps,
                          worst_pool=int(w_pool), worst_random=int(w_rand),
@@ -130,7 +132,7 @@ def main():
                          missed=bool(reached_pool and w_rand < K_TARGET)))
         if n % 10 == 0:
             print(f"  {n}/{len(sample)} codes={len(cs):3d} pool={w_pool:4d} rand={w_rand:4d}"
-                  f"{'  <-- ПРОПУСК' if rows[-1]['missed'] else ''}", flush=True)
+                  f"{'  <-- MISS' if rows[-1]['missed'] else ''}", flush=True)
 
     out = pd.DataFrame(rows)
     out.to_csv(RES / "verify_pool.csv", index=False)
@@ -138,13 +140,13 @@ def main():
     missed = int(ok.missed.sum())
     n_ok = len(ok)
     print()
-    print(f"юнітів перевірено: {len(out)}, медіана кодів {out.n_codes.median():.0f}, "
-          f"максимум {out.n_codes.max()}")
-    print(f"алгоритм оголосив reached: {n_ok}")
-    print(f"з них випадковий пошук знайшов порушення: {missed} ({missed/max(n_ok,1):.1%})")
+    print(f"units checked: {len(out)}, median codes {out.n_codes.median():.0f}, "
+          f"max {out.n_codes.max()}")
+    print(f"algorithm declared reached: {n_ok}")
+    print(f"of these, the randomized search found a violation: {missed} ({missed/max(n_ok,1):.1%})")
     if missed == 0 and n_ok:
-        print(f"верхня межа 95 % (правило трьох): {3/n_ok:.1%}")
-    print(f"середнє заниження найгіршого support: "
+        print(f"95% upper bound (rule of three): {3/n_ok:.1%}")
+    print(f"mean understatement of worst support: "
           f"{(out.worst_pool - out.worst_random).mean():.2f}")
 
 

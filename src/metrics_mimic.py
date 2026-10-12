@@ -1,14 +1,17 @@
-"""Геометричні метрики індексу MIMIC: наївні та з урахуванням належності пацієнту.
+"""Geometric metrics of the MIMIC index: naive ones and ones aware of patient ownership.
 
-Для кожного фрагмента і кожного k:
-  lid_all      LID (MLE Levina-Bickel) по k найближчих, нульові відстані пропускаються
-  rk_all       відстань до k-го сусіда
-  kocc_all     k-occurrence: скільки фрагментів тримають цей у своєму околі (анти-хабність = мало)
-  self_ratio   частка сусідів того самого пацієнта
-  rk_foreign   відстань до k-го фрагмента ІНШОГО пацієнта
-  d_foreign1   відстань до найближчого фрагмента іншого пацієнта
-  lid_foreign  LID лише по чужих сусідах
-  dup_patients скільки пацієнтів мають ідентичний текст
+For every chunk and every k:
+  lid_all      LID (Levina-Bickel MLE) over the k nearest neighbours, zero distances skipped
+  rk_all       distance to the k-th neighbour
+  kocc_all     k-occurrence: how many chunks hold this one in their neighbourhood
+               (anti-hubness = few)
+  self_ratio   share of neighbours belonging to the same patient
+  rk_foreign   distance to the k-th chunk of ANOTHER patient
+  d_foreign1   distance to the nearest chunk of another patient
+  lid_foreign  LID over foreign neighbours only
+  dup_patients how many patients carry an identical text
+
+Output: results/metrics_<model>.parquet
 """
 import sys
 from pathlib import Path
@@ -54,7 +57,7 @@ def lid_mle(d):
 
 
 def foreign_first_k(idx, dist, pat, kmax):
-    """Векторизовано: відстані до перших kmax сусідів з іншим пацієнтом (NaN якщо не вистачило)."""
+    """Vectorised: distances to the first kmax neighbours of a different patient (NaN if too few)."""
     n = idx.shape[0]
     foreign = pat[idx] != pat[:, None]
     rank = np.cumsum(foreign, axis=1) - 1
@@ -71,7 +74,7 @@ def main(model="bge"):
     pat = pd.factorize(df.subject_id)[0].astype(np.int32)
     n = len(df)
 
-    # скільки пацієнтів мають ідентичний текст
+    # how many patients carry an identical text
     tcode = pd.factorize(df.text)[0]
     tp = pd.DataFrame({"t": tcode, "p": pat}).groupby("t").p.nunique()
     dup_patients = tp.values[tcode]
@@ -93,8 +96,8 @@ def main(model="bge"):
     (ROOT / "results").mkdir(exist_ok=True)
     res.to_parquet(ROOT / "results" / f"metrics_{model}.parquet", index=False)
     np.save(ROOT / "data" / "emb" / f"knn_idx_{model}.npy", idx[:, :50])
-    print(f"{model}: збережено; NaN у LID {np.isnan(out['lid_all_k20']).mean():.4f}; "
-          f"чужих не знайдено в топ-{KMAX}: {np.isnan(fd[:, 0]).mean():.4f}")
+    print(f"{model}: saved; NaN in LID {np.isnan(out['lid_all_k20']).mean():.4f}; "
+          f"no other-patient neighbour in top-{KMAX}: {np.isnan(fd[:, 0]).mean():.4f}")
 
 
 if __name__ == "__main__":

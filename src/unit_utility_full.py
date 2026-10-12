@@ -1,15 +1,16 @@
-"""Ціна РОЗШИРЕНОГО методу в якості навчання.
+"""Cost of the EXTENDED method in model quality.
 
-Попередній замір стосувався узагальнення самих діагнозів. Тепер метод огрублює ще й рік,
-тип госпіталізації, расу, страховку, сімейний стан і процедури, тож ціну треба переміряти.
+The previous measurement covered generalization of the diagnoses alone. The method now coarsens
+the year, admission type, race, insurance, marital status and procedures as well, so the cost has
+to be re-measured.
 
-Задача та сама (30-денна реадмісія за кодами попередньої госпіталізації), щоб числа
-були порівнянні з `unit_utility2.py`.
+The task is the same (30-day readmission from the codes of the previous admission) so that the
+numbers stay comparable with `unit_utility2.py`.
 
-Ознаки: коди діагнозів і процедур + категоріальні атрибути як окремі токени. Так огрубіння
-атрибутів теж впливає на модель, а не лише огрубіння кодів.
+Features: diagnosis and procedure codes plus the categorical attributes as separate tokens. That
+way coarsening the attributes also affects the model, not only coarsening the codes.
 
-Вихід: results/unit/utility_full.csv
+Output: results/unit/utility_full.csv
 """
 from collections import defaultdict
 from pathlib import Path
@@ -28,7 +29,7 @@ from unit_protect_full import SPEC, gen_code  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "results" / "unit"
 SEED, Q_KNOWN, K_TARGET, N_REPEATS = 20261007, 3, 5, 5
-N_PATIENTS = 6000    # жадібний пошук дорогий; перетин оптимізовано сортуванням за розміром
+N_PATIENTS = 6000    # the greedy search is expensive; intersections are sped up by sorting on size
 WINDOW = 30
 
 
@@ -66,7 +67,7 @@ def main():
     ppop = pr.groupby("code").subject_id.nunique()
     allpop = {**dpop.to_dict(), **ppop.to_dict()}
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     code_idx = {l: defaultdict(set) for l in range(3)}
     for sid, cs, ps in zip(u.index, u.codes, u.procs):
         for c in set(cs) | (ps if isinstance(ps, set) else set()):
@@ -86,12 +87,12 @@ def main():
         sets += [code_idx[lvl[("code", c)]][gen_code(c, lvl[("code", c)])] for c in known]
         sets += [attr_idx[a][lvl[("attr", a)]][fn(u.at[sid, a], lvl[("attr", a)])]
                  for a, (fn, _) in SPEC.items()]
-        sets.sort(key=len)          # починаємо з найменшої множини — перетин швидший
+        sets.sort(key=len)          # start from the smallest set: the intersection is faster
         return len(set.intersection(*sets))
 
     sample = rng.choice(u.index.values, min(N_PATIENTS, len(u)), replace=False)
     u = u.loc[sample]
-    print(f"підвибірка {len(u)} пацієнтів; обчислюю політики...", flush=True)
+    print(f"subsample {len(u)} patients; computing policies...", flush=True)
     levels = {}
     for n, sid in enumerate(u.index):
         if n % 2000 == 0:
@@ -122,7 +123,7 @@ def main():
     by_dx = dx.groupby("hadm_id").code.apply(list)
     by_pr = pr.groupby("hadm_id").code.apply(list)
     adm = adm[adm.hadm_id.isin(by_dx.index) & adm.subject_id.isin(u.index)].reset_index(drop=True)
-    print(f"госпіталізацій {len(adm)}, реадмісій {adm.y.mean():.4f}", flush=True)
+    print(f"admissions {len(adm)}, readmissions {adm.y.mean():.4f}", flush=True)
 
     def docs(policy):
         out = []
@@ -134,7 +135,7 @@ def main():
             elif policy == "full":
                 toks = [gen_code(c, lvl.get(("code", c), 0)) for c in items]
                 toks += [f"{a}={fn(u.at[sid, a], lvl.get(('attr', a), 0))}" for a, (fn, _) in SPEC.items()]
-            else:  # codes_only — попередній метод для порівняння
+            else:  # codes_only — the previous method, kept for comparison
                 toks = [gen_code(c, lvl.get(("code", c), 0)) for c in items]
                 toks += [f"{a}={u.at[sid, a]}" for a in SPEC]
             out.append(" ".join(str(t).replace(":", "_").replace(" ", "_") for t in toks))
@@ -156,7 +157,7 @@ def main():
         rows.append(dict(policy=policy, auroc=np.mean(aucs), auroc_sd=np.std(aucs),
                          ap=np.mean(aps), vocab=len(set(w for d in X for w in d.split()))))
         print(f"{policy:12s} AUROC {np.mean(aucs):.4f} ± {np.std(aucs):.4f}  "
-              f"AP {np.mean(aps):.4f}  словник {rows[-1]['vocab']}", flush=True)
+              f"AP {np.mean(aps):.4f}  vocab {rows[-1]['vocab']}", flush=True)
 
     out = pd.DataFrame(rows)
     out["auroc_drop"] = out.auroc.iloc[0] - out.auroc

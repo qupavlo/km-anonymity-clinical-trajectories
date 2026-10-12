@@ -1,15 +1,15 @@
-"""Правильна kᵐ-анонімність над СПІЛЬНИМ простором: коди діагнозів і атрибути разом.
+"""Correct k^m-anonymity over the JOINT space: diagnosis codes and attributes together.
 
-Попередній прогін (`unit_protect_full.py`) захищав атрибути, але перевіряв умову лише для одного
-наперед заданого набору відомих елементів — та сама послаблена версія, яку зламав адаптивний
-супротивник. Тут гарантія вимагається для БУДЬ-ЯКОЇ підмножини розміру <= m, причому підмножина
-може містити як коди, так і атрибути.
+The previous run (`unit_protect_full.py`) protected the attributes but checked the condition only
+for a single, pre-specified set of known elements, the same weakened version that the adaptive
+adversary broke. Here the guarantee is required for ANY subset of size <= m, and the subset may
+mix codes and attributes.
 
-Простір елементів юніта: усі коди діагнозів + 7 атрибутів (стать, вікова група, рік першої
-госпіталізації, тип госпіталізації, страховка, сімейний стан, раса). Кожен має свою ієрархію
-узагальнення; стать узагальнюється лише до "*".
+The element space of a unit: all diagnosis codes plus 7 attributes (sex, age band, year of first
+admission, admission type, insurance, marital status, race). Each has its own generalization
+hierarchy; sex generalizes only to "*".
 
-Вихід: results/unit/kmanon_full.csv
+Output: results/unit/kmanon_full.csv
 """
 import sys
 from collections import defaultdict
@@ -27,9 +27,9 @@ RES = ROOT / "results" / "unit"
 K_TARGET = 5
 M_VALUES = (2, 3)
 N_SAMPLE = 400
-# ASPEC: year, adm_type, insurance, marital, race (band і gender — завжди відомі)
+# ASPEC: year, adm_type, insurance, marital, race (band and gender are always known)
 MAX_STEPS = 60
-POOL = 12          # скільки найтонших елементів беремо в перебір сполучень
+POOL = 12          # how many of the thinnest elements enter the enumeration of combinations
 SEED = 20261007
 
 
@@ -58,11 +58,12 @@ def main():
     u["marital"] = first.marital_status.reindex(u.index)
     u["race"] = first.race.reindex(u.index)
 
-    # демографія (стать, вікова група) вважається ВІДОМОЮ завжди — як у прогоні лише по кодах,
-    # щоб числа були прямо порівнянні. Решта атрибутів — елементи, які супротивник може знати.
+    # demographics (sex, age band) are treated as ALWAYS known, as in the codes-only run, so that
+    # the numbers are directly comparable. The remaining attributes are elements the adversary
+    # may know.
     ASPEC = {a: v for a, v in SPEC.items() if a != "band"}
     BASE_ATTRS = ["gender", "band"]
-    print(f"атрибутів {len(ASPEC)}, пацієнтів {len(u)}; будую індекс...", flush=True)
+    print(f"attributes {len(ASPEC)}, patients {len(u)}; building index...", flush=True)
 
     code_idx = {l: defaultdict(set) for l in range(3)}
     for sid, cs in zip(u.index, u.codes):
@@ -79,10 +80,10 @@ def main():
             for l in range(m + 1):
                 attr_idx[a][l][fn(u.at[sid, a], l)].add(sid)
     ALL = len(u)
-    print("готово", flush=True)
+    print("done", flush=True)
 
     def elem_set(sid, e, lvl):
-        """Множина пацієнтів, що збігаються з пацієнтом sid за елементом e на рівні lvl."""
+        """The set of patients that match patient sid on element e at generalization level lvl."""
         kind, name = e
         if kind == "c":
             return code_idx[lvl][gen_code(name, lvl)]
@@ -90,7 +91,7 @@ def main():
         return attr_idx[name][lvl][fn(u.at[sid, name], lvl)]
 
     def support_exact(sid, elems, lvl):
-        """Без раннього відсікання — для приросту в жадібному кроці."""
+        """No early exit: used for the gain in the greedy step, where the exact size matters."""
         sets = [attr_idx_base[a][u.at[sid, a]] for a in BASE_ATTRS]
         sets += [elem_set(sid, e, lvl[e]) for e in elems]
         sets.sort(key=len)
@@ -100,7 +101,7 @@ def main():
         return len(out)
 
     def support(sid, elems, lvl):
-        # демографія завжди у фільтрі: супротивник її знає за припущенням
+        # demographics are always in the filter: by assumption the adversary knows them
         sets = [attr_idx_base[a][u.at[sid, a]] for a in BASE_ATTRS]
         sets += [elem_set(sid, e, lvl[e]) for e in elems]
         sets.sort(key=len)
@@ -172,9 +173,9 @@ def main():
                          mean_attrs_raised=float(np.mean(attrs_raised)),
                          mean_attrs_total=len(ASPEC)))
         r = rows[-1]
-        print(f"m={m}: небезпечних до {r['unsafe_before']:.1%}, досягнуто {r['reached']:.1%}, "
-              f"піднято {r['mean_codes_raised']:.1f} кодів і {r['mean_attrs_raised']:.1f} з "
-              f"{len(ASPEC)} атрибутів, сумарна глибина {r['mean_levels']:.1f}", flush=True)
+        print(f"m={m}: unsafe before {r['unsafe_before']:.1%}, reached {r['reached']:.1%}, "
+              f"raised {r['mean_codes_raised']:.1f} codes and {r['mean_attrs_raised']:.1f} of "
+              f"{len(ASPEC)} attributes, total depth {r['mean_levels']:.1f}", flush=True)
 
     out = pd.DataFrame(rows)
     out.to_csv(RES / "kmanon_full.csv", index=False)

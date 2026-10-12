@@ -1,18 +1,24 @@
-"""Корисність ПРАВИЛЬНОЇ kᵐ-анонімності.
+"""Utility of CORRECT k^m-anonymity.
 
-Попередні заміри корисності стосувалися послабленої версії (узагальнювалися лише q наперед
-заданих кодів, 2 з 12). Правильна версія огрублює 37-54 % траєкторії, тож ціну треба переміряти.
+The earlier utility measurements covered a weakened version (only q pre-chosen codes were
+generalized, 2 out of 12). The correct version coarsens 37-54 % of the trajectory, so the cost
+has to be re-measured.
 
-Задача: 30-денна реадмісія за кодами попередньої госпіталізації — та сама, що в `unit_utility2.py`,
-щоб числа були порівнянні.
+Task: 30-day readmission from the codes of the previous admission — the same as in
+`unit_utility2.py`, so that the numbers stay comparable.
 
-Моделі:
-  lr      логістична регресія з підбором C крос-валідацією (щоб ефект регуляризації не маскував ціну)
-  lr_fix  логістична регресія з C=1 (як у попередніх замірах, для порівнянності)
+Models:
+  lr_cv   logistic regression with C tuned by cross-validation (so the regularization effect does
+          not mask the cost)
+  lr_fix  logistic regression with C=1 (as in the earlier measurements, for comparability)
 
-Політики: original / km2 / km3 / random_km3 (випадкове узагальнення тієї самої глибини).
+Policies: original / km2 / km3 / random_km3 (random generalization of the same depth).
 
-Вихід: results/unit/utility_kmanon.csv
+Note: `support()` here exits early once the partial intersection drops below K, and that
+truncated value is used as the gain of a greedy step. See `utility_refusal.py`, which fixes this
+with `support_exact()`; the levels computed here are therefore not the ones the paper costs.
+
+Output: results/unit/utility_kmanon.csv
 """
 import sys
 from collections import defaultdict
@@ -59,7 +65,7 @@ def main():
     u = u.join(pts.set_index("subject_id")[["gender", "band"]], how="inner")
     u = u[u.gender.notna() & u.band.notna()]
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     idx = {l: defaultdict(set) for l in range(MAXLVL + 1)}
     for sid, cs, g, b in zip(u.index, u.codes, u.gender, u.band):
         for c in cs:
@@ -117,7 +123,7 @@ def main():
 
     sample = rng.choice(u.index.values, min(N_PATIENTS, len(u)), replace=False)
     u = u.loc[sample]
-    print(f"підвибірка {len(u)}; обчислюю рівні...", flush=True)
+    print(f"subsample {len(u)}; computing levels...", flush=True)
     LV = {}
     for m in (2, 3):
         LV[m] = {}
@@ -125,7 +131,7 @@ def main():
             if n % 1000 == 0:
                 print(f"  m={m}: {n}/{len(u)}", flush=True)
             LV[m][sid] = km_levels(sid, m)
-    # випадкова політика тієї самої глибини, що km3
+    # random policy of the same depth as km3
     LV["rand"] = {}
     for sid in u.index:
         cs = sorted(u.at[sid, "codes"])
@@ -142,7 +148,7 @@ def main():
 
     by = dx.groupby("hadm_id").code.apply(list)
     adm = adm[adm.hadm_id.isin(by.index) & adm.subject_id.isin(u.index)].reset_index(drop=True)
-    print(f"госпіталізацій {len(adm)}, реадмісій {adm.y.mean():.4f}", flush=True)
+    print(f"admissions {len(adm)}, readmissions {adm.y.mean():.4f}", flush=True)
 
     def docs(policy):
         out = []

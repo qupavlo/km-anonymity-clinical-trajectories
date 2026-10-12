@@ -1,16 +1,16 @@
-"""Коди проти спільного простору — ПАРНЕ порівняння на одній вибірці (закриває M2-2).
+"""Codes versus the joint space: a PAIRED comparison on one sample.
 
-Претензія рецензії. Табл. VII статті порівнювала 73,3 % (лише коди, `kmanon.py`, n=737, POOL=14)
-з 81,3 % (спільний простір, `kmanon_full.py`, n=400, POOL=12). Це різні вибірки, різні гілки коду
-і різні бюджети пошуку. Менший POOL перебирає меншу частку простору підмножин і тому СЕРТИФІКУЄ
-БІЛЬШЕ юнітів — тобто артефакт діє в той самий бік, що й спостережений ефект, і «інтервали не
-перетинаються» нічого не доводить.
+The reviewer's objection. Table VII of the paper compared 73.3% (codes only, `kmanon.py`, n=737,
+POOL=14) against 81.3% (joint space, `kmanon_full.py`, n=400, POOL=12). Those are different
+samples, different code paths and different search budgets. A smaller POOL explores a smaller
+share of the subset space and therefore CERTIFIES MORE units, so the artifact pushes in the same
+direction as the observed effect and "the intervals do not overlap" proves nothing.
 
-Тут обидві конфігурації рахуються для ОДНИХ І ТИХ САМИХ пацієнтів, з однаковими POOL, MAX_STEPS,
-K і m. Звітуємо парну різницю з довірчим інтервалом по парних спостереженнях, а не два незалежні
-відсотки.
+Here both configurations are computed for THE SAME patients, with identical POOL, MAX_STEPS, K
+and m. We report the paired difference with a confidence interval over the paired observations
+instead of two independent percentages.
 
-Вихід: results/unit/joint_paired.csv
+Output: results/unit/joint_paired.csv
 """
 import sys
 from collections import defaultdict
@@ -29,8 +29,8 @@ RES = ROOT / "results" / "unit"
 K_TARGET = 5
 M_VALUES = (2, 3)
 N_SAMPLE = 500
-MAX_STEPS = 60        # спільний для обох плечей
-POOL = 12             # спільний для обох плечей
+MAX_STEPS = 60        # shared by both arms
+POOL = 12             # shared by both arms
 SEED = 20261009
 
 
@@ -58,7 +58,7 @@ def main():
 
     ASPEC = {a: v for a, v in SPEC.items() if a != "band"}
     BASE = ["gender", "band"]
-    print(f"пацієнтів {len(u)}; будую індекс...", flush=True)
+    print(f"patients {len(u)}; building index...", flush=True)
 
     code_idx = {l: defaultdict(set) for l in range(3)}
     for sid, cs in zip(u.index, u.codes):
@@ -74,7 +74,7 @@ def main():
         for a, (fn, m) in ASPEC.items():
             for l in range(m + 1):
                 attr_idx[a][l][fn(u.at[sid, a], l)].add(sid)
-    print("готово", flush=True)
+    print("done", flush=True)
 
     def elem_set(sid, e, lvl):
         kind, name = e
@@ -139,11 +139,11 @@ def main():
             cs = sorted(u.at[sid, "codes"])
             if len(cs) < m:
                 continue
-            # плече 1: лише коди
+            # arm 1: codes only
             e1 = [("c", c) for c in cs]
             mv1 = {e: 2 for e in e1}
             ok1, cost1, _ = enforce(sid, e1, mv1, m)
-            # плече 2: коди + атрибути, ТА САМА вибірка, той самий POOL і ліміт
+            # arm 2: codes + attributes, THE SAME sample, the same POOL and step limit
             e2 = e1 + [("a", a) for a in ASPEC]
             mv2 = dict(mv1); mv2.update({("a", a): ASPEC[a][1] for a in ASPEC})
             ok2, cost2, _ = enforce(sid, e2, mv2, m)
@@ -152,9 +152,9 @@ def main():
         a1 = np.array(res["codes"], dtype=float)
         a2 = np.array(res["joint"], dtype=float)
         d = a2 - a1
-        # парний тест на бінарних парах: McNemar через біном на розбіжних парах
-        b = int(((a2 == 1) & (a1 == 0)).sum())   # joint зміг, codes ні
-        c = int(((a2 == 0) & (a1 == 1)).sum())   # codes зміг, joint ні
+        # paired test on binary pairs: McNemar via a binomial test on the discordant pairs
+        b = int(((a2 == 1) & (a1 == 0)).sum())   # joint succeeded, codes did not
+        c = int(((a2 == 0) & (a1 == 1)).sum())   # codes succeeded, joint did not
         pv = stats.binomtest(b, b + c, 0.5).pvalue if (b + c) else 1.0
         ci = stats.t.interval(0.95, len(d) - 1, d.mean(), stats.sem(d)) if d.std() > 0 else (0, 0)
         rows.append(dict(m=m, n=len(a1), codes=float(a1.mean()), joint=float(a2.mean()),
@@ -163,9 +163,9 @@ def main():
                          cost_codes=float(np.mean(res["cost_codes"])),
                          cost_joint=float(np.mean(res["cost_joint"]))))
         r = rows[-1]
-        print(f"m={m}: лише коди {r['codes']:.3f}  спільний {r['joint']:.3f}  "
-              f"парна різниця {r['paired_diff']:+.3f} CI[{r['ci_lo']:+.3f},{r['ci_hi']:+.3f}]  "
-              f"розбіжні пари {b}/{c}  McNemar p={pv:.4f}", flush=True)
+        print(f"m={m}: codes only {r['codes']:.3f}  joint {r['joint']:.3f}  "
+              f"paired diff {r['paired_diff']:+.3f} CI[{r['ci_lo']:+.3f},{r['ci_hi']:+.3f}]  "
+              f"discordant pairs {b}/{c}  McNemar p={pv:.4f}", flush=True)
 
     out = pd.DataFrame(rows)
     out.to_csv(RES / "joint_paired.csv", index=False)

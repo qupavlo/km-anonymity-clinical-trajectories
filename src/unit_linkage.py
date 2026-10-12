@@ -1,23 +1,30 @@
-"""Ризик зв'язування ЮНІТА пацієнта за часткового зовнішнього знання.
+"""Linkage risk for a patient UNIT under partial external knowledge.
 
-Юніт = уся траєкторія пацієнта: усі діагнози всіх його госпіталізацій.
-Для навчання юніт треба випустити цілісним, тож унікальність самого набору неминуча.
+SUPERSEDED, KNOWN-INCORRECT. Kept only because the paper reports what it got wrong; do NOT use
+it as a reference implementation. It groups patients by exact equality of the key (sex, age band,
+q known codes), so a patient counts as a candidate only when their own q codes coincide with the
+known ones. The candidate set is defined by CONTAINMENT instead: a patient is a candidate if their
+trajectory contains the known codes, whatever else it holds. Equality understates the candidate
+set and therefore overstates risk. The corrected version is `linkage_fixed.py`.
 
-Питання не «чи унікальний юніт», а «скільки юнітів відповідають тому, що супротивник реально знає».
-Сценарії зовнішнього знання, від слабкого до сильного:
+A unit = the patient's whole trajectory: every diagnosis of every admission. Training needs the
+unit released intact, so uniqueness of the set itself is unavoidable.
 
-  S0  стать + вікова група
-  S1  + найчастіший діагноз пацієнта (те, що знають близькі: «лежав із серцем»)
-  S2  + 2 найчастіші діагнози
-  S3  + 3 найчастіші діагнози
-  S4  S1 + кількість госпіталізацій
-  S5  S3 + кількість госпіталізацій
-  S6  один РІДКІСНИЙ діагноз пацієнта (найгірший випадок: супротивник знає про рідкісну хворобу)
+The question is not "is the unit unique" but "how many units match what the adversary actually
+knows". External-knowledge scenarios, from weak to strong:
 
-Для кожного сценарію рахуємо розмір множини кандидатів — скільки пацієнтів у наборі відповідають
-цьому знанню. Розмір 1 означає, що юніт ідентифіковано.
+  S0  sex + age band
+  S1  + the patient's most frequent diagnosis (what relatives know: "he was in with his heart")
+  S2  + the 2 most frequent diagnoses
+  S3  + the 3 most frequent diagnoses
+  S4  S1 + number of admissions
+  S5  S3 + number of admissions
+  S6  one RARE diagnosis of the patient (worst case: the adversary knows about a rare disease)
 
-Вихід: results/unit/linkage.csv, summary.json
+For each scenario we count the candidate set size, i.e. how many patients in the data match that
+knowledge. Size 1 means the unit is identified.
+
+Output: results/unit/linkage.csv, summary.json
 """
 import json
 from collections import defaultdict
@@ -29,7 +36,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "results" / "unit"
 RES.mkdir(parents=True, exist_ok=True)
-RARE_PAT = 10          # діагноз рідкісний, якщо його мають <= стількох пацієнтів у всій базі
+RARE_PAT = 10          # a diagnosis is rare if at most this many patients in the whole base have it
 
 
 def main():
@@ -39,20 +46,19 @@ def main():
                       usecols=["subject_id", "gender", "anchor_age"])
     pts["band"] = (pts.anchor_age // 10 * 10).astype(int).astype(str) + "s"
 
-    # популяційна частота діагнозу — за ВСІЄЮ базою MIMIC
+    # population frequency of a diagnosis, over the WHOLE MIMIC base
     pop = dx.groupby("code").subject_id.nunique()
     rare = set(pop[pop <= RARE_PAT].index)
 
-    # юніт пацієнта
     unit = dx.groupby("subject_id").code.apply(set)
     n_adm = dx.groupby("subject_id").hadm_id.nunique()
     u = pd.DataFrame({"codes": unit, "n_adm": n_adm}).join(
         pts.set_index("subject_id")[["gender", "band"]], how="inner")
     u = u[u.gender.notna() & u.band.notna()]
-    print(f"юнітів (пацієнтів) {len(u)}; медіана діагнозів {u.codes.map(len).median():.0f}, "
-          f"госпіталізацій {u.n_adm.median():.0f}", flush=True)
+    print(f"units (patients) {len(u)}; median diagnoses {u.codes.map(len).median():.0f}, "
+          f"admissions {u.n_adm.median():.0f}", flush=True)
 
-    # найчастіші й найрідкісніші діагнози всередині юніта
+    # the most frequent and the rarest diagnoses inside the unit
     def top_common(cs, k):
         return tuple(sorted(sorted(cs, key=lambda c: -pop.get(c, 0))[:k]))
 
@@ -66,19 +72,19 @@ def main():
     u["rarest"] = u.codes.map(rarest)
 
     scen = {
-        "S0 стать+вік": lambda r: (r.gender, r.band),
-        "S1 +1 частий діагноз": lambda r: (r.gender, r.band, r.c1),
-        "S2 +2 часті діагнози": lambda r: (r.gender, r.band, r.c2),
-        "S3 +3 часті діагнози": lambda r: (r.gender, r.band, r.c3),
-        "S4 S1+к-ть госпіталізацій": lambda r: (r.gender, r.band, r.c1, r.n_adm),
-        "S5 S3+к-ть госпіталізацій": lambda r: (r.gender, r.band, r.c3, r.n_adm),
-        "S6 один рідкісний діагноз": lambda r: (r.rarest,),
-        "S7 повний набір (довідково)": lambda r: (r.gender, r.band, tuple(sorted(r.codes))),
+        "S0 sex+age band": lambda r: (r.gender, r.band),
+        "S1 +1 common diagnosis": lambda r: (r.gender, r.band, r.c1),
+        "S2 +2 common diagnoses": lambda r: (r.gender, r.band, r.c2),
+        "S3 +3 common diagnoses": lambda r: (r.gender, r.band, r.c3),
+        "S4 S1+n_admissions": lambda r: (r.gender, r.band, r.c1, r.n_adm),
+        "S5 S3+n_admissions": lambda r: (r.gender, r.band, r.c3, r.n_adm),
+        "S6 one rare diagnosis": lambda r: (r.rarest,),
+        "S7 full code set (reference)": lambda r: (r.gender, r.band, tuple(sorted(r.codes))),
     }
     rows = []
     for name, fn in scen.items():
         keys = [fn(r) for r in u.itertuples()]
-        # pandas перетворює None на NaN, тому перевіряємо через pd.isna, а не "is not None"
+        # pandas turns None into NaN, so test with pd.isna rather than "is not None"
         has = (np.array([not pd.isna(k[-1]) for k in keys]) if name.startswith("S6")
                else np.ones(len(u), bool))
         cnt = defaultdict(int)
@@ -91,8 +97,8 @@ def main():
             median=float(np.median(size)), p10=float(np.percentile(size, 10)),
             unique=float(np.mean(size == 1)), lt5=float(np.mean(size < 5)),
             lt20=float(np.mean(size < 20)), ge100=float(np.mean(size >= 100))))
-        print(f"{name:30s} медіана кандидатів {np.median(size):8.0f}  "
-              f"унікальних {np.mean(size==1):6.1%}  <5 {np.mean(size<5):6.1%}  "
+        print(f"{name:30s} median candidates {np.median(size):8.0f}  "
+              f"unique {np.mean(size==1):6.1%}  <5 {np.mean(size<5):6.1%}  "
               f">=100 {np.mean(size>=100):6.1%}", flush=True)
 
     out = pd.DataFrame(rows)

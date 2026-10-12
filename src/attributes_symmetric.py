@@ -1,14 +1,14 @@
-"""Таблиця атрибутів із виправленим фільтром (той самий дефект, що й у linkage_fixed).
+"""Attribute table with the filter fixed (the same defect as in linkage_fixed).
 
-`linkage_fixed.py:132` бере `common_q(r.codes, 2)` без перевірки `len(codes) >= 2`. Для пацієнта
-з одним кодом це повертає ВЕСЬ його набір під виглядом «два найчастіші діагнози», а повний набір
-ідентифікує 87,9 %. Таких пацієнтів 5 888 (2,6 % когорти), і вони завищують базову лінію, від якої
-відлічується внесок кожного атрибута.
+`linkage_fixed.py:132` calls `common_q(r.codes, 2)` without checking `len(codes) >= 2`. For a
+patient with a single code this returns their ENTIRE code set disguised as "the two most frequent
+diagnoses", and the full set identifies 87.9%. There are 5,888 such patients (2.6% of the cohort)
+and they inflate the baseline against which each attribute's contribution is measured.
 
-Тут та сама таблиця на когорті з >= 2 кодами, щоб базова лінія і всі рядки стосувалися однієї
-популяції.
+This script recomputes the same table on the cohort with >= 2 codes, so that the baseline and
+every row refer to one and the same population.
 
-Вихід: results/unit/attributes_symmetric.csv
+Output: results/unit/attributes_symmetric.csv
 """
 from collections import defaultdict
 from pathlib import Path
@@ -46,9 +46,9 @@ def main():
     pop = dx.groupby("code").subject_id.nunique().to_dict()
 
     N_all = len(u)
-    u = u[u.codes.map(len) >= Q]          # <-- виправлення: спільна популяція для всіх рядків
+    u = u[u.codes.map(len) >= Q]          # <-- the fix: one shared population for every row
     N = len(u)
-    print(f"когорта {N_all}, з >= {Q} кодами {N} (вилучено {N_all - N})", flush=True)
+    print(f"cohort {N_all}, with >= {Q} codes {N} (excluded {N_all - N})", flush=True)
 
     demo = defaultdict(set)
     code_idx = defaultdict(set)
@@ -65,7 +65,7 @@ def main():
     for sid in u.index:
         for a in attr_idx:
             attr_idx[a][u.at[sid, a]].add(sid)
-    print("індекси готові", flush=True)
+    print("indexes ready", flush=True)
 
     def inter(sets):
         sets = sorted(sets, key=len)
@@ -101,8 +101,8 @@ def main():
         a = np.array(sizes)
         rows.append(dict(extra=name, n=len(a), median=float(np.median(a)),
                          unique=float(np.mean(a == 1)), lt5=float(np.mean(a < 5))))
-        print(f"{name:22s} n={len(a):6d} медіана {np.median(a):7.0f} "
-              f"ідент. {np.mean(a == 1):6.2%}", flush=True)
+        print(f"{name:22s} n={len(a):6d} median {np.median(a):7.0f} "
+              f"ident. {np.mean(a == 1):6.2%}", flush=True)
 
     out = pd.DataFrame(rows)
     out.to_csv(RES / "attributes_symmetric.csv", index=False)

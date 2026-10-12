@@ -1,15 +1,15 @@
-"""Вплив обрізання перебору, виміряний ПАРНО (закриває третю ітерацію тієї самої помилки).
+"""Effect of truncating the search, measured PAIRED (closes the third occurrence of the same error).
 
-Історія дефекту: раунд 1 — C7, раунд 2 — M2-2, і в тексті, написаному для закриття M2-2, та сама
-помилка відтворена втретє. Твердження «звуження пулу з 14 до 12 піднімає видиму захищеність на
-3–6 пунктів» було побудоване на зіставленні `kmanon.csv` (n=780/737, POOL=14) з `joint_paired.csv`
-(n=483/464, POOL=12) — різні вибірки, різні прогони, непарне порівняння. Виправлення симптому
-зберегло спосіб міркування.
+The same unpaired comparison had been made three times, most recently in text written to correct
+the previous instance of it. The claim that "narrowing the pool from 14 to 12 raises the apparent
+level of protection by 3-6 points" rested on setting `kmanon.csv` (n=780/737, POOL=14) against
+`joint_paired.csv` (n=483/464, POOL=12): different samples, different runs, an unpaired comparison.
+Fixing the symptom each time left the way of reasoning intact.
 
-Тут POOL=14 і POOL=12 рахуються для ОДНИХ І ТИХ САМИХ пацієнтів, решта параметрів спільна.
-Звітуємо парну різницю, розбіжні пари і McNemar.
+Here POOL=14 and POOL=12 are computed for THE SAME patients, every other parameter shared.
+We report the paired difference, the discordant pairs and McNemar.
 
-Вихід: results/unit/pool_paired.csv
+Output: results/unit/pool_paired.csv
 """
 import sys
 from collections import defaultdict
@@ -43,13 +43,13 @@ def main():
     u = u.join(pts.set_index("subject_id")[["gender", "band"]], how="inner")
     u = u[u.gender.notna() & u.band.notna()]
 
-    print("індекс популяції...", flush=True)
+    print("population index...", flush=True)
     idx = {l: defaultdict(set) for l in range(MAXLVL + 1)}
     for sid, cs, g, b in zip(u.index, u.codes, u.gender, u.band):
         for c in cs:
             for l in range(MAXLVL + 1):
                 idx[l][(g, b, gen_code(c, l))].add(sid)
-    print("готово", flush=True)
+    print("done", flush=True)
 
     def sup(g, b, items, exact):
         sets = [idx[l][(g, b, gen_code(c, l))] for c, l in items]
@@ -113,7 +113,7 @@ def main():
         a14 = np.array(res["ok14"], dtype=float)
         a12 = np.array(res["ok12"], dtype=float)
         d = a12 - a14
-        b_ = int(((a12 == 1) & (a14 == 0)).sum())   # лише POOL=12 сертифікував
+        b_ = int(((a12 == 1) & (a14 == 0)).sum())   # certified by POOL=12 only
         c_ = int(((a12 == 0) & (a14 == 1)).sum())
         pv = stats.binomtest(b_, b_ + c_, 0.5).pvalue if (b_ + c_) else 1.0
         ci = stats.t.interval(0.95, len(d) - 1, d.mean(), stats.sem(d)) if d.std() > 0 else (0.0, 0.0)
@@ -124,8 +124,8 @@ def main():
                          median_codes=float(np.median(res["n_codes"]))))
         r = rows[-1]
         print(f"m={m}: POOL14 {r['pool14']:.3f}  POOL12 {r['pool12']:.3f}  "
-              f"парна різниця {r['paired_diff']:+.3f} CI[{r['ci_lo']:+.3f},{r['ci_hi']:+.3f}]  "
-              f"лише12/лише14 {b_}/{c_}  p={pv:.4f}", flush=True)
+              f"paired diff {r['paired_diff']:+.3f} CI[{r['ci_lo']:+.3f},{r['ci_hi']:+.3f}]  "
+              f"only12/only14 {b_}/{c_}  p={pv:.4f}", flush=True)
 
     out = pd.DataFrame(rows)
     out.to_csv(RES / "pool_paired.csv", index=False)

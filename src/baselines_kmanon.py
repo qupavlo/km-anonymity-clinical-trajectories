@@ -1,16 +1,16 @@
-"""Базові лінії під ПРАВИЛЬНОЮ kᵐ-анонімністю (перевірка всіх підмножин).
+"""Baselines under the CORRECT k^m-anonymity (all subsets are checked).
 
-Попередня таблиця базових ліній порівнювала варіанти ослабленої схеми, яку адаптивний супротивник
-ламає. Тут усі політики оцінюються за тим самим коректним критерієм: гарантія для будь-якої
-підмножини розміру <= m.
+The previous baseline table compared variants of the weakened scheme that an adaptive adversary
+breaks. Here every policy is scored against the same correct criterion: the guarantee must hold
+for any subset of size <= m.
 
-Політики (усі витрачають однакову кількість рівнів, що визначає greedy):
-  greedy    піднімаємо код з порушеної підмножини з найбільшим приростом support
-  random    піднімаємо випадкові коди
-  rarest    піднімаємо найрідкісніші в популяції коди
-  uniform   піднімаємо ВСІ коди на один рівень (наближення глобального перекодування)
+Policies (all spend the same number of generalization levels, the amount that greedy needs):
+  greedy    raise the code of the violating subset with the largest gain in support
+  random    raise codes at random
+  rarest    raise the codes that are rarest in the population
+  uniform   raise ALL codes by one level (an approximation of global recoding)
 
-Вихід: results/unit/baselines_kmanon.csv
+Output: results/unit/baselines_kmanon.csv
 """
 import sys
 from collections import defaultdict
@@ -44,7 +44,7 @@ def main():
     u = u[u.gender.notna() & u.band.notna()]
     pop = dx.groupby("code").subject_id.nunique().to_dict()
 
-    print("індекс...", flush=True)
+    print("index...", flush=True)
     idx = {l: defaultdict(set) for l in range(MAXLVL + 1)}
     for sid, cs, g, b in zip(u.index, u.codes, u.gender, u.band):
         for c in cs:
@@ -64,8 +64,8 @@ def main():
         return len(out)
 
     def support_exact(g, b, items):
-        """Без раннього відсікання: потрібен точний розмір, коли значення використовується
-        як приріст у жадібному кроці, а не лише для булевого порівняння з K."""
+        """No early exit: the exact size is required when the value is used as the gain in the
+        greedy step and not merely for a boolean comparison against K."""
         sets = [idx[l][(g, b, gen_code(c, l))] for c, l in items]
         if not sets:
             return len(u)
@@ -152,7 +152,7 @@ def main():
         rows.append(row)
         print(f"m={m}: greedy {row['greedy']:.3f} random {row['random']:.3f} "
               f"rarest {row['rarest']:.3f} uniform {row['uniform']:.3f} "
-              f"(ціна greedy {row['mean_cost']:.1f}, uniform {row['uniform_cost']:.1f})", flush=True)
+              f"(cost greedy {row['mean_cost']:.1f}, uniform {row['uniform_cost']:.1f})", flush=True)
 
     out = pd.DataFrame(rows)
     out.to_csv(RES / "baselines_kmanon.csv", index=False)

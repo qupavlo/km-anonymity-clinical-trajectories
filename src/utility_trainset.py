@@ -1,23 +1,24 @@
-"""Ціна ВІДМОВИ, виміряна на спільній тестовій вибірці (закриває CRITICAL рецензії ACPS).
+"""Cost of REFUSAL measured on a shared test set (closes the CRITICAL point of the ACPS review).
 
-Дефект попереднього заміру. У `utility_refusal.py` плечі `*_kept` обмежували і навчальну, і
-ТЕСТОВУ частину до допущених пацієнтів. Отже `original` оцінювався на тесті з базовою часткою
-21,3 %, а `released` — на тесті з 11,1 %. Різниця AUROC між ними вимірює, наскільки одна задача
-легша за іншу, а не скільки втрачає контролер. Стаття сама це визнавала («a different and easier
-population») і все одно подавала 0,033 як ціну — у заголовку, анотації й висновках.
+Defect of the earlier measurement. In `utility_refusal.py` the `*_kept` arms restricted both the
+training AND the TEST part to kept patients. So `original` was scored on a test set with a base
+rate of 21.3 % and `released` on one with 11.1 %. The AUROC difference between them measures how
+much easier one task is than the other, not how much the controller loses. The paper admitted
+this itself ("a different and easier population") and still reported 0.033 as the cost, in the
+title, the abstract and the conclusions.
 
-Правильне питання: модель навчають на тому, що дозволено випустити, і застосовують до ВСІХ
-пацієнтів. Тож тестова вибірка має лишатися повною, а змінюватись має лише навчальна.
+The right question: the model is trained on what may be released and then applied to ALL patients.
+So the test set must stay complete and only the training set may vary.
 
-Чотири плеча, УСІ на одному й тому самому тесті (повна популяція, однакове огрублення):
-  train_all        навчання на всіх пацієнтах        <- базова лінія
-  train_kept       навчання лише на допущених        <- ціна ВІДМОВИ (те, що треба)
-  train_all_raw    навчання на всіх, сирі коди       <- ціна ОГРУБЛЕННЯ
-  train_kept_raw   навчання на допущених, сирі коди  <- контроль
+Four arms, ALL on one and the same test set (full population, same coarsening):
+  train_all        trained on all patients            <- baseline
+  train_kept       trained on kept patients only      <- cost of REFUSAL (what we want)
+  train_all_raw    trained on all, raw codes          <- cost of COARSENING
+  train_kept_raw   trained on kept patients, raw      <- control
 
-Різниця train_kept - train_all на спільному тесті і є ціною відмови.
+The difference train_kept - train_all on the shared test set is the cost of refusal.
 
-Вихід: results/unit/utility_trainset.csv, utility_trainset_tests.csv
+Output: results/unit/utility_trainset.csv, utility_trainset_tests.csv
 """
 import pickle
 import sys
@@ -43,10 +44,10 @@ N_PATIENTS, N_REPEATS, WINDOW, SEED, M = 8000, 25, 30, 20261007, 3
 def main():
     cache = RES / f"levels_m{M}_n{N_PATIENTS}_s{SEED}.pkl"
     if not cache.exists():
-        raise SystemExit(f"немає кешу рівнів {cache.name}; спершу запустіть utility_refusal.py")
+        raise SystemExit(f"no level cache {cache.name}; run utility_refusal.py first")
     LV, KEPT, WHY, STEPS = pickle.loads(cache.read_bytes())
     kept_ids = {sid for sid, ok in KEPT.items() if ok}
-    print(f"рівні з кешу: {len(LV)} пацієнтів, допущено {len(kept_ids)}", flush=True)
+    print(f"levels from cache: {len(LV)} patients, admitted {len(kept_ids)}", flush=True)
 
     dx = pd.read_csv(ROOT / "raw" / "hosp" / "diagnoses_icd.csv.gz", dtype={"icd_code": str})
     dx["code"] = dx.icd_version.astype(str) + ":" + dx.icd_code.str.strip()
@@ -61,7 +62,7 @@ def main():
 
     by = dx.groupby("hadm_id").code.apply(list)
     adm = adm[adm.hadm_id.isin(by.index) & adm.subject_id.isin(LV.keys())].reset_index(drop=True)
-    print(f"госпіталізацій {len(adm)}, базова частка {adm.y.mean():.4f}", flush=True)
+    print(f"admissions {len(adm)}, base rate {adm.y.mean():.4f}", flush=True)
 
     def docs(rows, coarsen):
         return [" ".join(gen_code(c, (LV[sid] if coarsen else {}).get(c, 0)).replace(":", "_")
@@ -72,15 +73,15 @@ def main():
     X_gen, X_raw = docs(adm, True), docs(adm, False)
     in_kept = adm.subject_id.isin(kept_ids).values
 
-    # КОНТРОЛЬ: відмова робить дві речі одночасно — прибирає зміщену підмножину
-    # І вдвічі зменшує навчальну вибірку. Щоб розділити ці ефекти, додаємо плече
-    # з ВИПАДКОВИМ вилученням такої самої частки пацієнтів.
+    # CONTROL: the refusal does two things at once — it removes a biased subset
+    # AND it halves the training set. To separate those effects we add an arm
+    # that removes the same share of patients AT RANDOM.
     rng = np.random.default_rng(SEED)
     pat = adm.subject_id.unique()
     n_keep = len(set(pat) & kept_ids)
     rand_keep = set(rng.choice(pat, n_keep, replace=False))
     in_rand = adm.subject_id.isin(rand_keep).values
-    print(f"контроль: випадково збережено {n_keep} пацієнтів з {len(pat)}", flush=True)
+    print(f"control: randomly kept {n_keep} patients with {len(pat)}", flush=True)
 
     arms = [("train_all", X_gen, None), ("train_kept", X_gen, in_kept),
             ("train_random", X_gen, in_rand),
@@ -92,7 +93,7 @@ def main():
         for rep in range(N_REPEATS):
             tr, te = next(GroupShuffleSplit(n_splits=1, test_size=0.25,
                                             random_state=SEED + rep).split(X, y, groups))
-            # ВІДМОВА діє лише на навчальну частину; тест завжди повний
+            # the REFUSAL applies to the training part only; the test set is always complete
             tr_use = tr[mask[tr]] if mask is not None else tr
             vec = TfidfVectorizer(token_pattern=r"\S+", min_df=3)
             Xtr = vec.fit_transform([X[i] for i in tr_use])
@@ -109,22 +110,22 @@ def main():
               f"  AP {np.mean(aps):.4f}", flush=True)
 
     prows = []
-    for a, b, label in [("train_kept", "train_all", "ціна ВІДМОВИ (спільний тест)"),
-                        ("train_random", "train_all", "КОНТРОЛЬ: та сама к-ть, випадковий відбір"),
-                        ("train_kept", "train_random", "чистий ефект ВІДБОРУ, розмір зрівняно"),
-                        ("train_all", "train_all_raw", "ціна ОГРУБЛЕННЯ (спільний тест)"),
-                        ("train_kept_raw", "train_all_raw", "ціна відмови без огрублення")]:
+    for a, b, label in [("train_kept", "train_all", "cost of REFUSAL (shared test set)"),
+                        ("train_random", "train_all", "CONTROL: same count, random selection"),
+                        ("train_kept", "train_random", "pure SELECTION effect, size matched"),
+                        ("train_all", "train_all_raw", "cost of COARSENING (shared test set)"),
+                        ("train_kept_raw", "train_all_raw", "cost of refusal without coarsening")]:
         d = PER[a] - PER[b]
         t, pv = stats.ttest_rel(PER[a], PER[b])
         ci = stats.t.interval(0.95, len(d) - 1, d.mean(), stats.sem(d))
         prows.append(dict(a=a, b=b, mean_diff=float(d.mean()), ci_lo=float(ci[0]),
                           ci_hi=float(ci[1]), t=float(t), p=float(pv), n_rep=len(d), note=label))
-        print(f"[парний] {a} − {b}: Δ={d.mean():+.4f} CI[{ci[0]:+.4f},{ci[1]:+.4f}] "
+        print(f"[paired] {a} − {b}: Δ={d.mean():+.4f} CI[{ci[0]:+.4f},{ci[1]:+.4f}] "
               f"p={pv:.4f}   {label}", flush=True)
 
     pd.DataFrame(rows).to_csv(RES / "utility_trainset.csv", index=False)
     pd.DataFrame(prows).to_csv(RES / "utility_trainset_tests.csv", index=False)
-    print("\nзбережено utility_trainset.csv і utility_trainset_tests.csv")
+    print("\nwrote utility_trainset.csv and utility_trainset_tests.csv")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,11 @@
-"""Діагностика двох зауважень рецензента до перевірки kᵐ.
+"""Diagnostics for two reviewer objections to the k^m check.
 
-1. MAX_STEPS: скільки юнітів обриваються на межі кроків, а не через вичерпання ієрархії?
-2. pool[:14]: евристика бере лише 14 кодів з найменшим одиничним support. Скільки порушень
-   вона пропускає проти ПОВНОГО перебору всіх сполучень?
+1. MAX_STEPS: how many units stop at the step limit rather than because the hierarchy is
+   exhausted?
+2. pool[:14]: the heuristic keeps only the 14 codes with the smallest single-item support. How
+   many violations does it miss compared with a FULL enumeration of all combinations?
 
-Вихід: results/unit/diag_completeness.csv
+Output: results/unit/diag_completeness.csv
 """
 import sys
 from collections import defaultdict
@@ -56,11 +57,11 @@ rows=[]
 for n,sid in enumerate(sample):
     if n%25==0: print(f"  {n}/{N_SAMPLE}",flush=True)
     cs=sorted(u.at[sid,"codes"]); g,b=u.at[sid,"gender"],u.at[sid,"band"]
-    if len(cs)<M or len(cs)>22: continue      # >22 кодів: повний перебір надто дорогий
+    if len(cs)<M or len(cs)>22: continue      # >22 codes: full enumeration gets too expensive
     lvl={c:0 for c in cs}
     w14,_=worst(g,b,cs,lvl,M,14)
     wfull,_=worst(g,b,cs,lvl,M,len(cs))
-    # прогін з великим лімітом кроків
+    # run with a large step limit
     steps=0; lv=dict(lvl); limit=2*len(cs)+5
     while steps<limit:
         w,ws=worst(g,b,cs,lv,M,14)
@@ -76,9 +77,9 @@ for n,sid in enumerate(sample):
                      missed=wfull<w14, steps_used=steps, hit_40=steps>=40,
                      reached=worst(g,b,cs,lv,M,14)[0]>=K))
 d=pd.DataFrame(rows); d.to_csv(RES/"diag_completeness.csv",index=False)
-print(f"\nn={len(d)}, медіана кодів {d.n_codes.median():.0f}")
-print(f"pool[:14] пропускає гірше порушення: {d.missed.mean():.1%} юнітів")
-print(f"  медіана worst: pool14 {d.worst_pool14.median():.0f} проти повного {d.worst_full.median():.0f}")
-print(f"кроків використано: медіана {d.steps_used.median():.0f}, максимум {d.steps_used.max()}")
-print(f"досягли б межі MAX_STEPS=40: {d.hit_40.mean():.1%}")
-print(f"reached при знятому ліміті: {d.reached.mean():.1%}")
+print(f"\nn={len(d)}, median codes {d.n_codes.median():.0f}")
+print(f"pool[:14] misses a worse violation: {d.missed.mean():.1%} units")
+print(f"  median worst: pool14 {d.worst_pool14.median():.0f} vs full {d.worst_full.median():.0f}")
+print(f"steps used: median {d.steps_used.median():.0f}, max {d.steps_used.max()}")
+print(f"would hit the MAX_STEPS=40 cap: {d.hit_40.mean():.1%}")
+print(f"reached with the cap removed: {d.reached.mean():.1%}")

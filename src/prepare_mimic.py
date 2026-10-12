@@ -1,15 +1,15 @@
-"""Підготовка фрагментів з виписок MIMIC-IV-Note.
+"""Preparation of chunks from MIMIC-IV-Note discharge summaries.
 
-Один фрагмент = одна клінічно змістовна секція виписки. Адміністративні й шаблонні секції
-(інструкції при виписці, подальші візити, заклад) відкидаємо: вони однакові в тисяч пацієнтів
-і домінували б у просторі вкладень.
+One chunk = one clinically meaningful section of a discharge summary. Administrative and
+boilerplate sections (discharge instructions, follow-up visits, facility) are dropped: they are
+identical across thousands of patients and would dominate the embedding space.
 
-Підвибірка пацієнтів задається N_PATIENTS, щоб обсяг був порівнянний із прогоном на Synthea
-(~100 тис. фрагментів) і щоб точний пошук сусідів лишався здійсненним на одній машині.
+The patient subsample is set by N_PATIENTS, so that the volume is comparable with the Synthea run
+(~100k chunks) and exact neighbour search stays feasible on a single machine.
 
-Дані не залишають цю машину (умови DUA PhysioNet).
+The data does not leave this machine (PhysioNet DUA terms).
 
-Вихід: data/chunks.parquet
+Output: data/chunks.parquet
 """
 import gzip
 import re
@@ -25,8 +25,8 @@ OUT = ROOT / "data"
 OUT.mkdir(exist_ok=True)
 SEED = 20261005
 N_PATIENTS = 20000
-MIN_CHARS = 40           # коротші секції не несуть клінічного змісту
-MAX_CHARS = 4000         # довші обрізаємо: вікно моделі 512 токенів
+MIN_CHARS = 40           # shorter sections carry no clinical content
+MAX_CHARS = 4000         # longer ones are truncated: the model window is 512 tokens
 
 KEEP = ["Chief Complaint", "History of Present Illness", "Past Medical History",
         "Major Surgical or Invasive Procedure", "Brief Hospital Course",
@@ -34,12 +34,12 @@ KEEP = ["Chief Complaint", "History of Present Illness", "Past Medical History",
 DROP = ["Discharge Instructions", "Followup Instructions", "Discharge Disposition",
         "Discharge Condition", "Facility", "Discharge Medications",
         "Medications on Admission", "Allergies", "Social History", "Pertinent Results"]
-# заголовок на початку рядка; текст може йти як з нового рядка, так і одразу після двокрапки
+# heading at the start of a line; the body may begin on the next line or right after the colon
 HEAD = re.compile(r"^ *([A-Z][A-Za-z /&\-]{3,40}):", re.M)
 
 
 def sections(text):
-    """Розбити виписку на (назва секції, тіло)."""
+    """Split a discharge summary into (section name, body)."""
     marks = [(m.start(), m.end(), m.group(1).strip()) for m in HEAD.finditer(text)]
     out = []
     for i, (s, e, name) in enumerate(marks):
@@ -54,13 +54,13 @@ def main():
     tmp = Path("/tmp/d.csv")
     path = tmp if tmp.exists() else src
 
-    # перший прохід: які пацієнти є
+    # first pass: which patients are present
     ids = set()
     for ch in pd.read_csv(path, usecols=["subject_id"], chunksize=200000):
         ids.update(ch.subject_id.tolist())
     ids = np.array(sorted(ids))
     keep_pat = set(rng.choice(ids, min(N_PATIENTS, len(ids)), replace=False).tolist())
-    print(f"пацієнтів усього {len(ids)}, у підвибірці {len(keep_pat)}", flush=True)
+    print(f"patients in total {len(ids)}, in subsample {len(keep_pat)}", flush=True)
 
     rows = []
     seen_notes = 0
@@ -81,9 +81,9 @@ def main():
     df = pd.DataFrame(rows, columns=["chunk_id", "note_id", "subject_id", "hadm_id",
                                      "charttime", "section", "text"])
     df.to_parquet(OUT / "chunks.parquet", index=False)
-    print(f"нотаток {seen_notes}, фрагментів {len(df)}, пацієнтів {df.subject_id.nunique()}")
+    print(f"notes {seen_notes}, chunks {len(df)}, patients {df.subject_id.nunique()}")
     print(df.section.value_counts().to_string())
-    print(f"довжина тексту: медіана {df.text.str.len().median():.0f}, "
+    print(f"text length: median {df.text.str.len().median():.0f}, "
           f"90% {df.text.str.len().quantile(.9):.0f}")
 
 

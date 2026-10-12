@@ -1,7 +1,9 @@
-"""R3 на MIMIC: чи здатне адитивне збурення сховати ізольований запис.
+"""R3 on MIMIC: can additive perturbation hide an isolated record?
 
-Ізольованість визначаємо відносно: верхній дециль за відстанню до 20-го фрагмента іншого пацієнта.
-Порівнюємо розподіли λ за однакового середнього бюджету шуму.
+Isolation is defined in relative terms: the top decile of the distance to the 20th chunk of
+another patient. We compare the λ distributions at an equal average noise budget.
+
+Output: results/r3/lambda_<model>.csv
 """
 import json
 from pathlib import Path
@@ -54,7 +56,7 @@ def main(model="bge"):
     keep = ~txt.duplicated().values
     emb, m = emb[keep], m[keep].reset_index(drop=True)
     iso = m.rk_foreign_k20.values >= np.quantile(m.rk_foreign_k20.values, 0.90)
-    print(f"індекс {len(emb)}, ізольованих (верхній дециль) {iso.sum()}", flush=True)
+    print(f"index {len(emb)}, isolated (top decile) {iso.sum()}", flush=True)
     rng = np.random.default_rng(SEED); q = rng.choice(len(emb), NQ, replace=False)
     rows = []
     for name in ("uniform", "lid", "rk", "rk_rank"):
@@ -67,9 +69,9 @@ def main(model="bge"):
                              lam_iso=float(lam[iso].mean()), lam_rest=float(lam[~iso].mean()),
                              link_iso=float(h[iso].mean()), link_rest=float(h[~iso].mean()),
                              utility=utility(p, emb, q)))
-            print(f"{name:8s} B={B:.2f} λ ізол/решта {rows[-1]['lam_iso']/rows[-1]['lam_rest']:.2f} "
-                  f"зіставлено ізол {rows[-1]['link_iso']:.3f} решта {rows[-1]['link_rest']:.3f} "
-                  f"корисність {rows[-1]['utility']:.3f}", flush=True)
+            print(f"{name:8s} B={B:.2f} lambda iso/rest {rows[-1]['lam_iso']/rows[-1]['lam_rest']:.2f} "
+                  f"re-associated isolated {rows[-1]['link_iso']:.3f} rest {rows[-1]['link_rest']:.3f} "
+                  f"utility {rows[-1]['utility']:.3f}", flush=True)
     out = pd.DataFrame(rows); out.to_csv(RES/f"lambda_{model}.csv", index=False)
     print(out.round(3).to_string(index=False))
 

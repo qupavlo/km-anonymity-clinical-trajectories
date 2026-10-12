@@ -1,14 +1,16 @@
-"""Виправлений розрахунок множини кандидатів: ВКЛЮЧЕННЯ, а не рівність ключа.
+"""Corrected candidate set computation: CONTAINMENT, not key equality.
 
-Помилка попередньої версії (`unit_linkage.py`): пацієнти групувалися за точним збігом кортежа
-(стать, вікова група, q відомих кодів). Тобто кандидатом вважався лише той, чиї власні q
-найчастіших кодів збігалися з відомими. Стаття ж означує множину кандидатів як
+Bug in the previous version (`unit_linkage.py`): patients were grouped by exact equality of the
+tuple (sex, age band, q known codes). That counted a patient as a candidate only when their own q
+most common codes coincided with the known ones. The paper, however, defines the candidate set as
     C = { p' : A_p' = A_p AND Q_p ⊆ U_p' }
-тобто пацієнт є кандидатом, якщо він МІСТИТЬ відомі коди, незалежно від решти своєї траєкторії.
+that is, a patient is a candidate if they CONTAIN the known codes, whatever the rest of their
+trajectory looks like.
 
-Рівність занижує |C| і тому завищує ризик. Тут рахуємо коректно, через інвертований індекс.
+Equality understates |C| and therefore overstates risk. Here it is computed correctly, through an
+inverted index.
 
-Вихід: results/unit/linkage_fixed.csv, results/unit/attributes_fixed.csv
+Output: results/unit/linkage_fixed.csv, results/unit/attributes_fixed.csv
 """
 from collections import defaultdict
 from pathlib import Path
@@ -47,9 +49,9 @@ def main():
     pop = dx.groupby("code").subject_id.nunique().to_dict()
     ppop = pr.groupby("code").subject_id.nunique().to_dict()
     N = len(u)
-    print(f"пацієнтів {N}", flush=True)
+    print(f"patients {N}", flush=True)
 
-    # інвертовані індекси
+    # inverted indexes
     demo = defaultdict(set)
     for sid, g, b in zip(u.index, u.gender, u.band):
         demo[(g, b)].add(sid)
@@ -67,7 +69,7 @@ def main():
         for a in attr_idx:
             attr_idx[a][u.at[sid, a]].add(sid)
     rare = {c for c, n in pop.items() if n <= RARE_PAT}
-    print("індекси готові", flush=True)
+    print("indexes ready", flush=True)
 
     def inter(sets):
         sets = sorted(sets, key=len)
@@ -105,12 +107,12 @@ def main():
         rows.append(dict(scenario=name, n=len(a), median=float(np.median(a)),
                          unique=float(np.mean(a == 1)), lt5=float(np.mean(a < 5)),
                          ge100=float(np.mean(a >= 100))))
-        print(f"{name:20s} n={len(a):6d} медіана {np.median(a):8.0f} "
-              f"ідентифіковано {np.mean(a == 1):6.1%}  <5 {np.mean(a < 5):6.1%}", flush=True)
+        print(f"{name:20s} n={len(a):6d} median {np.median(a):8.0f} "
+              f"identified {np.mean(a == 1):6.1%}  <5 {np.mean(a < 5):6.1%}", flush=True)
     pd.DataFrame(rows).to_csv(RES / "linkage_fixed.csv", index=False)
 
-    # атрибути: до двох найчастіших діагнозів додаємо по одному атрибуту
-    print("\nАТРИБУТИ (до 2 найчастіших діагнозів):", flush=True)
+    # attributes: one attribute at a time added on top of the two most common diagnoses
+    print("\nATTRIBUTES (added to the 2 most common diagnoses):", flush=True)
     extra = {
         "— (diagnoses only)": lambda r: [],
         "+ year of admission": lambda r: [attr_idx["year"][r.year]],
@@ -134,7 +136,7 @@ def main():
         a = np.array(sizes)
         arows.append(dict(extra=name, n=len(a), median=float(np.median(a)),
                           unique=float(np.mean(a == 1)), lt5=float(np.mean(a < 5))))
-        print(f"  {name:22s} медіана {np.median(a):7.0f}  ідентифіковано {np.mean(a == 1):6.1%}", flush=True)
+        print(f"  {name:22s} median {np.median(a):7.0f}  identified {np.mean(a == 1):6.1%}", flush=True)
     pd.DataFrame(arows).to_csv(RES / "attributes_fixed.csv", index=False)
 
 
